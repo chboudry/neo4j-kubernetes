@@ -152,6 +152,10 @@ graph TB
 
 **Best of both worlds: Web interface through reverse proxy for internet access, direct Bolt access for internal applications and dedicated networks.**
 
+**This may be ideal if you want to provide access to Neo4j Browser, Bloom and Neodash through Internet, and need bolt port for ETL components or other applications/services using neo4j drivers.**
+
+**Keep in mind database IS accessible through wss, so security is identity.**
+
 **Features:**
 - Reverse proxy for HTTPS web interface (internet access)
 - Direct Bolt access via dedicated service for internal applications
