@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: https-server
+  namespace: application
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: 
+      - https.server
+      secretName: https-server-tls
+  rules:
+    - host: https.server
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: my-neo4j-release
+                port:
+                  number: 7474

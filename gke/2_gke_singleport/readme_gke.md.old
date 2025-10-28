@@ -1,0 +1,78 @@
+# Setup 
+
+1 standalone neo4J instance on a GKE 
+     NOT accessible from outside
+1 LB with public IP to access
+     accessible to the outside
+     able to reach neo4j service
+
+# 1. Setup GKE
+brew install --cask gcloud-cli
+gcloud auth login
+gcloud components install gke-gcloud-auth-plugin
+gcloud container clusters create chboudry-cluster --project chboudry-project --zone europe-west1-b --num-nodes 3 --machine-type e2-medium 
+gcloud container clusters get-credentials chboudry-cluster --zone europe-west1-b --project chboudry-project
+kubectl config current-context
+kubectl config get-contexts
+kubectl cluster-info
+kubectl get nodes
+
+
+
+helm show values neo4j/neo4j
+
+# 2. Setup neo4j standalone
+
+https://neo4j.com/docs/operations-manual/current/kubernetes/accessing-neo4j/
+
+kubectl get ns
+kubectl create namespace application
+kubectl config set-context --current --namespace=application
+
+helm install my-neo4j-release neo4j/neo4j --namespace application -f 1_neo4j.yaml
+
+kubectl --namespace "application" rollout status --watch --timeout=600s statefulset/my-neo4j-release
+
+kubectl get service -l helm.neo4j.com/service=default,helm.neo4j.com/instance=my-neo4j-release
+
+kubectl run -it --rm --namespace "application" --image "neo4j:2025.09.0" cyphershell -- cypher-shell -a "neo4j://my-neo4j-release.application.svc.cluster.local:7687" -u neo4j -p "my-initial-password"
+
+show databases;
+
+kubectl exec my-neo4j-release-0 -- tail -n50 /logs/neo4j.log
+
+
+# 3. Install ingress-nginx (with TLS passthrough)
+
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --namespace ingress-nginx --create-namespace \
+  --set controller.extraArgs.enable-ssl-passthrough=true
+
+
+
+
+# 3. Setup LB
+https://neo4j.com/docs/operations-manual/current/kubernetes/accessing-neo4j-ingress/#_install_the_reverse_proxy_helm_chart
+
+https://github.com/neo4j/helm-charts/blob/dev/neo4j-reverse-proxy/values.yaml
+
+helm show values neo4j/neo4j-reverse-proxy
+
+helm upgrade --install ingress-nginx ingress-nginx \
+      --repo https://kubernetes.github.io/ingress-nginx \
+      --namespace proxy --create-namespace
+
+
+http://34.77.79.14:80 
+
+kubectl apply -f 3_nginx_tcp.yaml
+kubectl get svc -n proxy
+
+
+
+
+cypher-shell -a neo4j+ssc://bolt.server:443 -u neo4j -p my-initial-password -d neo4j
+

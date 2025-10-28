@@ -1,0 +1,43 @@
+neo4j:
+  name: my-standalone
+  resources:
+    cpu: "0.5"
+    memory: "2Gi"
+
+  # Mot de passe initial
+  password: "my-initial-password"
+
+  # Édition Enterprise + acceptation de licence
+  edition: "enterprise"
+  acceptLicenseAgreement: "yes"
+
+# Configuration SSL pour Bolt
+ssl:
+  bolt:
+    privateKey:
+      secretName: bolt-server-tls
+      subPath: tls.key
+    publicCertificate:
+      secretName: bolt-server-tls
+      subPath: tls.crt
+
+# Stockage des données
+volumes:
+  data:
+    mode: "dynamic"
+    dynamic:
+      # GKE : premium-rwo = SSD (recommandé)
+      storageClassName: premium-rwo
+
+services:
+  neo4j:
+    enabled: false
+
+  default:
+    annotations: {}
+
+  admin:
+    enabled: true
+
+config:
+  server.bolt.tls_level: "REQUIRED"
