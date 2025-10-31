@@ -5,13 +5,14 @@ This repository contains different configurations for deploying Neo4j on Kuberne
 
 **Note:**
 - HTTPS server and Bolt access are on the same pod but they also can be split
+- Schema are focused on production where we favor HTTPS over HTTP, but you may find HTTP in subfolders because it is easier to start with from an implementation perspective as you don't deal with certificate.
 
 ## 1. Simple Configuration - Direct Load Balancer
 
 **Features:**
 
 - Direct access to Neo4j ports via LoadBalancer service
-- Port 7474 for HTTPS web interface
+- Port 7473 for HTTPS web interface
 - Port 7687 for Bolt connections
 - Simplest configuration
 
@@ -27,13 +28,13 @@ graph TB
         end
         
         subgraph "Pods"
-            Neo4j[Neo4j Pod<br/>:7474 HTTPS<br/>:7687 Bolt]
+            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt]
         end
     end
     
-    Client -->|HTTPS :7474| LB
+    Client -->|HTTPS :7473| LB
     Client -->|Bolt :7687| LB
-    LB -->|:7474| Neo4j
+    LB -->|:7473| Neo4j
     LB -->|:7687| Neo4j
     
     style Client fill:#e1f5fe
@@ -100,7 +101,6 @@ This also implies you can't set up this configuration without certificates and D
 - Separation of HTTPS and Bolt services
 
 
-
 ```mermaid
 graph TB
     subgraph "Internet"
@@ -118,7 +118,7 @@ graph TB
         end
         
         subgraph "Pods"
-            Neo4j[Neo4j Pod<br/>:7474 HTTPS<br/>:7687 Bolt]
+            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt]
         end
         
         subgraph "Ingress Rules"
@@ -133,7 +133,7 @@ graph TB
     IC --> HTTPSRule
     IC --> BoltRule
     
-    HTTPSRule -->|:7474| Neo4jHTTPS
+    HTTPSRule -->|:7473| Neo4jHTTPS
     BoltRule -->|:7687| Neo4jBolt
     
     Neo4jHTTPS --> Neo4j
@@ -182,7 +182,7 @@ graph TB
         
         subgraph "Pods"
             RP[Reverse Proxy Pod<br/>nginx/traefik]
-            Neo4j[Neo4j Pod<br/>:7474 HTTPS<br/>:7687 Bolt]
+            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt]
         end
         
         subgraph "Internal Cluster"
@@ -195,7 +195,7 @@ graph TB
     ClusterApp -->|Bolt :7687| Neo4jSvc
     
     RPLB --> RP
-    RP -->|HTTP/HTTPS :7474| Neo4jSvc
+    RP -->|HTTP/HTTPS :7473| Neo4jSvc
     BoltLB -->|:7687| Neo4j
     Neo4jSvc --> Neo4j
     
@@ -220,7 +220,7 @@ graph TB
 | Aspect | Simple LB | Reverse Proxy | TLS SNI | Hybrid |
 |--------|-----------|---------------|---------|---------|
 | **Complexity** | Low | Medium | High | Medium-High |
-| **External ports** | 2 (7474, 7687) | 1 (443) | 1 (443) | 2 (443, 7687) |
+| **External ports** | 2 (7473, 7687) | 1 (443) | 1 (443) | 2 (443, 7687) |
 | **SSL/TLS** | Neo4j native | Proxy termination | Ingress termination | Mixed |
 | **Routing** | Direct | Path/header based | SNI based | Mixed |
 | **Scalability** | Limited | Good | Excellent | Excellent |
@@ -232,4 +232,3 @@ graph TB
 - `gke/` - Google Kubernetes Engine specific configurations
 - `aks/` - Azure Kubernetes Service specific configurations
 - `local/` - Local cluster configurations
-- `neo4j/` - Custom Neo4j Helm charts
