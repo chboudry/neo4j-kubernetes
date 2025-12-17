@@ -1,0 +1,54 @@
+# 0_prerequisites.yaml
+---
+# 1. Service Account (Workload Identity)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: neo4j-gcs-sa
+  namespace: application
+
+---
+# 2. Custom StorageClass for Neo4j data (SSD with Retain policy)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: neo4j-data-ssd
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: pd-ssd  # Premium SSD
+reclaimPolicy: Retain  # Keep data when PVC is deleted
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+
+---
+# 3. PV pour import (GCS)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: neo4j-import-pv
+spec:
+  accessModes:
+  - ReadWriteMany
+  capacity:
+    storage: 10Gi
+  storageClassName: neo4j-gcs-import
+  persistentVolumeReclaimPolicy: Retain
+  csi:
+    driver: gcsfuse.csi.storage.gke.io
+    volumeHandle: test-wi-host-network-2
+    readOnly: false
+
+---
+# 4. PVC pour import
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: neo4j-import-pvc
+  namespace: application
+spec:
+  accessModes:
+  - ReadWriteMany
+  storageClassName: neo4j-gcs-import
+  resources:
+    requests:
+      storage: 10Gi

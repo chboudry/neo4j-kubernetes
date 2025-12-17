@@ -8,16 +8,26 @@ neo4j:
   # Uncomment to use enterprise edition
   edition: "enterprise"
   acceptLicenseAgreement: "yes"
+
+# Use Kubernetes Service Account for Workload Identity
+serviceAccount:
+  name: neo4j-gcs-sa
   
 volumes:
+  # Data sur SSD (performance)
   data:
-    mode: "dynamic"
+    mode: dynamic
     dynamic:
-      # In GKE;
-      # * premium-rwo provisions SSD disks (recommended)
-      # * standard-rwo provisions balanced SSD-backed disks
-      # * standard provisions HDD disks
-      storageClassName: premium-rwo
+      storageClassName: neo4j-data-ssd
+      requests:
+        storage: 100Gi
+  
+  # Import sur GCS
+  import:
+    mode: volume
+    volume:
+      persistentVolumeClaim:
+        claimName: neo4j-import-pvc
 
 services:
   neo4j:
@@ -33,14 +43,3 @@ services:
 
 podSpec:
   podAntiAffinity: false
-
-
-
-
-
-
-
-
-
-
-
