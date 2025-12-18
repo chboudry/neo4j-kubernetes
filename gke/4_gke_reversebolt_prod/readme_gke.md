@@ -104,7 +104,7 @@ gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
 ```
 
 ## Create a Google Service Account
-gcloud iam service-accounts create neo4j-gcs-sa \
+gcloud iam service-accounts create neo4j-gcs-gsa \
     --project=$PROJECT_ID \
     --display-name="Neo4j GCS Access"
 
@@ -114,15 +114,10 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
     --role="roles/storage.objectAdmin"
 
 ## Bind Kubernetes SA to Google SA
-gcloud iam service-accounts add-iam-policy-binding neo4j-gcs-sa@${PROJECT_ID}.iam.gserviceaccount.com \
+gcloud iam service-accounts add-iam-policy-binding neo4j-gcs-gsa@${PROJECT_ID}.iam.gserviceaccount.com \
     --project=$PROJECT_ID \
     --role="roles/iam.workloadIdentityUser" \
     --member="serviceAccount:${PROJECT_ID}.svc.id.goog[application/neo4j-gcs-sa]"
-
-## Annotate the Kubernetes ServiceAccount
-kubectl annotate serviceaccount neo4j-gcs-sa \
-    -n application \
-    iam.gke.io/gcp-service-account=neo4j-gcs-sa@${PROJECT_ID}.iam.gserviceaccount.com
 
 ## Check permissions
 ```
@@ -221,12 +216,27 @@ kubectl exec -it my-neo4j-release-0 -n application -- bash
 ```
 ## Run Import
 ```
-neo4j stop
-neo4j-admin database import full \
+helm upgrade my-neo4j-release neo4j/neo4j \
+  --namespace application \
+  --version=2025.10.1 \
+  --reuse-values \
+  --set neo4j.offlineMaintenanceModeEnabled=true
+```
+```
+kubectl exec my-neo4j-release-0 -n application -- neo4j-admin database import full \
   neo4j \
   --nodes=/import/persons.csv \
   --overwrite-destination=true
-neo4j start
+```
+```
+helm upgrade my-neo4j-release neo4j/neo4j \
+  --namespace application \
+  --version=2025.10.1 \
+  --reuse-values \
+  --set neo4j.offlineMaintenanceModeEnabled=false
+```
+```
+kubectl get pod my-neo4j-release-0 -n application
 ```
 
 # 7. Deploy Reverse proxy

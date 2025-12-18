@@ -36,6 +36,9 @@ services:
   admin:
     enabled: true
 
+serviceAccount:
+  name: neo4j-gcs-sa
+  
 podSpec:
   serviceAccountName: neo4j-gcs-sa
   podAntiAffinity: false
