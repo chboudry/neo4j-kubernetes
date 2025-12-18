@@ -6,6 +6,8 @@ kind: ServiceAccount
 metadata:
   name: neo4j-gcs-sa
   namespace: application
+  annotations:
+    iam.gke.io/gcp-service-account: neo4j-gcs-gsa@chboudry-project.iam.gserviceaccount.com
 
 ---
 # 2. Custom StorageClass for Neo4j data (SSD with Retain policy)
@@ -21,7 +23,52 @@ volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true
 
 ---
-# 3. PV pour import (GCS)
+# 3. PV for data (pd-ssd)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: neo4j-data-pv
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 50Gi
+  storageClassName: neo4j-data-ssd
+  persistentVolumeReclaimPolicy: Retain
+  csi:
+    driver: pd.csi.storage.gke.io
+    volumeHandle: projects/chboudry-project/zones/europe-west1-b/disks/neo4j-data-disk
+    fsType: ext4
+
+---
+# 4. PVC for data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: neo4j-data-pvc
+  namespace: application
+spec:
+  accessModes:
+  - ReadWriteOnce
+  storageClassName: neo4j-data-ssd
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+# 5. StorageClass for import (GCS)
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: neo4j-gcs-import
+provisioner: gcsfuse.csi.storage.gke.io
+parameters:
+  bucketName: chboudry-import-bucket
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+
+---
+# 6. PV for import (GCS)
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -35,16 +82,22 @@ spec:
   persistentVolumeReclaimPolicy: Retain
   csi:
     driver: gcsfuse.csi.storage.gke.io
-    volumeHandle: test-wi-host-network-2
+    volumeHandle: chboudry-import-bucket
     readOnly: false
+    volumeAttributes:
+      gcsfuseLoggingSeverity: warning
 
 ---
-# 4. PVC pour import
+# 7. PVC for import
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: neo4j-import-pvc
   namespace: application
+  annotations:
+    gke-gcsfuse/cpu-limit: "0"
+    gke-gcsfuse/memory-limit: "0"
+    gke-gcsfuse/ephemeral-storage-limit: "0"
 spec:
   accessModes:
   - ReadWriteMany

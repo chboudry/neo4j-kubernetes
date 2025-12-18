@@ -56,7 +56,7 @@ graph TB
 
 | Component | Purpose |
 |-----------|---------|
-| **StorageClass** | Defines storage type and provisioner |
+| **StorageClass** | Defines storage type and provisioner, can be disk or bucket |
 | **PersistentVolume (PV)** | Represents physical storage (GCS bucket) |
 | **PersistentVolumeClaim (PVC)** | Requests storage for use |
 | **Neo4j Pod** | Uses PVC to access storage | Helm chart |

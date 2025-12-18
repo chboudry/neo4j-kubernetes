@@ -9,18 +9,13 @@ neo4j:
   edition: "enterprise"
   acceptLicenseAgreement: "yes"
 
-# Use Kubernetes Service Account for Workload Identity
-serviceAccount:
-  name: neo4j-gcs-sa
-  
 volumes:
   # Data sur SSD (performance)
   data:
-    mode: dynamic
-    dynamic:
-      storageClassName: neo4j-data-ssd
-      requests:
-        storage: 100Gi
+    mode: volume
+    volume:
+      persistentVolumeClaim:
+        claimName: neo4j-data-pvc
   
   # Import sur GCS
   import:
@@ -42,4 +37,5 @@ services:
     enabled: true
 
 podSpec:
+  serviceAccountName: neo4j-gcs-sa
   podAntiAffinity: false
