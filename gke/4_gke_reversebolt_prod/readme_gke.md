@@ -28,7 +28,7 @@ export BUCKET_REGION="europe-west1"
 
 export CLUSTER_NAME="chboudry-cluster"
 export CLUSTER_NODES_NUM=3
-export MACHINE_TYPE="e2-standard-4"
+export MACHINE_TYPE="n2-standard-2"
 ```
 
 ## gcloud-cli for MAC
@@ -77,6 +77,14 @@ gsutil ls -L gs://${BUCKET_NAME}
 ```
 # 3. Configure Workload Identity
 
+## Enable Workload Identity on cluster (authentication mechanism)
+```
+gcloud container clusters update $CLUSTER_NAME \
+    --project $PROJECT_ID \
+    --workload-pool=$PROJECT_ID.svc.id.goog \
+    --zone=$REGION
+```
+
 ## Enable GCS Fuse CSI driver addon (volume mounting mechanism)
 ```
 gcloud container clusters update $CLUSTER_NAME \
@@ -85,13 +93,30 @@ gcloud container clusters update $CLUSTER_NAME \
     --zone=$REGION
 ```
 
-## Enable Workload Identity on cluster (authentication mechanism)
+## Verify node pool Workload Identity
 ```
-gcloud container clusters update $CLUSTER_NAME \
-    --project $PROJECT_ID \
-    --workload-pool=$PROJECT_ID.svc.id.goog \
-    --zone=$REGION
+gcloud container node-pools list \
+  --project=$PROJECT_ID \
+  --cluster "$CLUSTER_NAME" \
+  --zone="$REGION"
 ```
+```
+gcloud container node-pools describe <POOL_NAME> \
+  --project=$PROJECT_ID \
+  --cluster "$CLUSTER_NAME" \
+  --zone="$REGION" \
+  --format='value(config.workloadMetadataConfig.mode)'
+```
+If the describe command prints nothing (or `GCE_METADATA`), update that pool to use Workload Identity. This recreates the nodes.
+```
+gcloud container node-pools update <POOL_NAME> \
+  --project=$PROJECT_ID \
+  --cluster "$CLUSTER_NAME" \
+  --zone="$REGION" \
+  --workload-metadata=GKE_METADATA
+```
+Wait for the update to finish before proceeding.
+
 ## Get project number
 ```
 export PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
@@ -104,20 +129,26 @@ gcloud storage buckets add-iam-policy-binding gs://${BUCKET_NAME} \
 ```
 
 ## Create a Google Service Account
+```
 gcloud iam service-accounts create neo4j-gcs-gsa \
     --project=$PROJECT_ID \
     --display-name="Neo4j GCS Access"
+```
 
 ## Grant storage permissions to the GSA
+```
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:neo4j-gcs-gsa@${PROJECT_ID}.iam.gserviceaccount.com" \
     --role="roles/storage.objectAdmin"
+```
 
 ## Bind Kubernetes SA to Google SA
+```
 gcloud iam service-accounts add-iam-policy-binding neo4j-gcs-gsa@${PROJECT_ID}.iam.gserviceaccount.com \
     --project=$PROJECT_ID \
     --role="roles/iam.workloadIdentityUser" \
     --member="serviceAccount:${PROJECT_ID}.svc.id.goog[application/neo4j-gcs-sa]"
+```
 
 ## Check permissions
 ```
