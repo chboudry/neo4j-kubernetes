@@ -9,6 +9,11 @@ neo4j:
   edition: "enterprise"
   acceptLicenseAgreement: "yes"
 
+image:
+  registry: "docker.io"
+  repository: "neo4j"
+  tag: "2025.12.1-enterprise"
+
 volumes:
   # Data sur SSD (performance)
   data:

@@ -222,7 +222,7 @@ kubectl describe pod my-neo4j-release-0 -n application
 ```
 ## Access database
 ```
-kubectl run -it --rm --namespace "application" --image "neo4j:2025.10.1" cyphershell -- cypher-shell -a "neo4j://my-neo4j-release.application.svc.cluster.local:7687" -u neo4j -p "my-initial-password"
+kubectl run -it --rm --namespace "application" --image "neo4j:2025.12.1" cyphershell -- cypher-shell -a "neo4j://my-neo4j-release.application.svc.cluster.local:7687" -u neo4j -p "my-initial-password"
 ```
 ## Logs
 ```
