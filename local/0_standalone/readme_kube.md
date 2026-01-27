@@ -21,8 +21,6 @@ kubectl create namespace neo4j
 
 helm install core-1 neo4j/neo4j -n neo4j -f standalone.yaml
 
-xa1FR38hnGNfdd
-
 # Membre 1
 helm install core-1 neo4j/neo4j -n neo4j -f values-core.yaml
 # Membre 2

@@ -2,11 +2,7 @@ neo4j:
   name: my-standalone
   edition: "enterprise"    
   acceptLicenseAgreement: "yes"
-  password: "password"         
-  minimumClusterSize: 3        
-  resources:
-    cpu: "0.5"
-    memory: "2Gi"
+  password: "password"            
 
 volumes:
   data:
@@ -14,10 +10,6 @@ volumes:
     defaultStorageClass:
       requests:
         storage: 2Gi
-
-config:
-  dbms.default_database: “neo4j”
-  dbms.config.strict_validation: “true”
 
 podSpec:
   podAntiAffinity: false
