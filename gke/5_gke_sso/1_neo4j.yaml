@@ -1,0 +1,69 @@
+neo4j:
+  name: my-standalone
+  resources:
+    cpu: "0.5"
+    memory: "2Gi"
+  # Uncomment to set the initial password
+  password: "my-initial-password"
+  # Uncomment to use enterprise edition
+  edition: "enterprise"
+  acceptLicenseAgreement: "yes"
+  
+volumes:
+  data:
+    mode: "dynamic"
+    dynamic:
+      storageClassName: premium-rwo
+
+
+config:
+  # SSO Config example
+  # Authentication
+  dbms.security.auth_enabled: "true"
+  # list of authentication providers, order matters, if a user is not found in the first provider, the next one will be used
+  # name after prefix "oidc-" is arbitrary and can be used to group related settings, for example if you have multiple OIDC providers
+  dbms.security.authentication_providers: "oidc-microsoft,native"
+  # Display name for Microsoft provider, it is a name that will be seen in the Neo4j Browser login screen
+  dbms.security.oidc.microsoft.display_name: "Mendacorp OIDC"
+  # Uris for OIDC discovery and issuer, these are standard OIDC settings, you can find the values in the metadata document of your OIDC provider
+  dbms.security.oidc.microsoft.well_known_discovery_uri: "https://login.microsoftonline.com/2b0d1330-312c-497a-a034-f2374ee0be2a/v2.0/.well-known/openid-configuration"
+  dbms.security.oidc.microsoft.issuer: "https://login.microsoftonline.com/2b0d1330-312c-497a-a034-f2374ee0be2a/v2.0"
+  dbms.security.oidc.microsoft.auth_flow: "pkce"
+  dbms.security.oidc.microsoft.config: "principal=sub;code_challenge_method=S256;token_type_principal=id_token;token_type_authentication=id_token"
+  dbms.security.oidc.microsoft.claims.username: "email"
+  dbms.security.oidc.microsoft.audience: "277d91dc-0278-48fd-bdb0-ab8b93087291"
+  dbms.security.oidc.microsoft.params: "client_id=277d91dc-0278-48fd-bdb0-ab8b93087291;response_type=code;scope=openid profile email offline_access"
+
+  # Authorization
+  # list of authorization providers, order matters, if a user is not found in the first provider, the next one will be used
+  dbms.security.authorization_providers: "oidc-microsoft,native"
+  dbms.security.oidc.microsoft.claims.username: "email"
+  dbms.security.oidc.microsoft.claims.groups: "groups"
+  dbms.security.oidc.microsoft.authorization.group_to_role_mapping: "6b908715-6a2b-4770-9ff3-ef642f4e9762=editor"
+  #dbms.
+  dbms.ssl.policy.https.verify_hostname: "false"
+  dbms.ssl.policy.bolt.verify_hostname: "false"
+# ssl:
+#   bolt:
+#     privateKey:
+#       secretName: neo4j-tls
+#       subPath: tls.key
+#     publicCertificate:
+#       secretName: neo4j-tls
+#       subPath: tls.crt
+#   https:
+#     privateKey:
+#       secretName: neo4j-tls
+#       subPath: tls.key
+#     publicCertificate:
+#       secretName: neo4j-tls
+#       subPath: tls.crt
+#     trustedCerts:
+#       sources:
+#       - secret:
+#           name: neo4j-tls
+#           items:
+#           - key: tls.crt
+#             path: public.crt
+podSpec:
+  podAntiAffinity: false

@@ -72,3 +72,20 @@ kubectl exec my-neo4j-release-0 -n application -- tail -n50 /logs/neo4j.log
 ```
 kubectl get svc -n application -o wide
 ```
+
+Connect on http://external-ip:7474
+
+# Python access
+```
+python3 -m venv env
+source ./env/bin/activate
+pip install -r ./requirements.txt
+python py_user_access.py
+```
+
+# Edit yaml 
+```
+helm upgrade my-neo4j-release neo4j/neo4j --namespace application -f 1_neo4j.yaml
+kubectl rollout restart statefulset my-neo4j-release -n application
+kubectl rollout status statefulset my-neo4j-release -n application
+```

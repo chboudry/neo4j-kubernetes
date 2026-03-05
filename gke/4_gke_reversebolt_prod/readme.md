@@ -269,5 +269,3 @@ helm upgrade my-neo4j-release neo4j/neo4j \
 ```
 kubectl get pod my-neo4j-release-0 -n application
 ```
-
-# 7. Deploy Reverse proxy
