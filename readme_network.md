@@ -1,4 +1,4 @@
-# Neo4j Kubernetes Network Configurations
+# Neo4j Kubernetes Network Architecture
 
 **Note:**
 - HTTPS server and Bolt access are on the same pod but they also can be split

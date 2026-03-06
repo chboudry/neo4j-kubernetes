@@ -1,9 +1,10 @@
-# Neo4j Kubernetes Configurations
+# Neo4j Kubernetes Deployment Architecture Guide
 
-This repository contains multiple architectures to deploy Neo4j on Kubernetes.
+This repository provides several reference architectures for deploying Neo4j on Kubernetes.
 
-Refer to the sub readme to understand what's going on : 
-- [Network](readme_network.md)
-- [Volumes](readme_volumes.md)
-- [Plugins](readme_plugins.md)
-- [Certificates](https://github.com/msenechal/neo4j-gke-okta-sso-example/tree/main)
+Each topic is documented in detail in its dedicated guide:
+- [Network Architecture](readme_network.md)
+- [Storage & Data persistence](readme_volumes.md)
+- [Plugin Management](readme_plugins.md)
+- [Network Security (TLS/SSL)](readme_ssl.md)
+- [Authentication & Authorization](readme_sso.md)
