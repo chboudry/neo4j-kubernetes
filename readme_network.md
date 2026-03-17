@@ -8,16 +8,13 @@
 
 | | **Dev: Direct LB** | **Prod 1: Ingress TLS Termination** | **Prod 2: Ingress Passthrough** | **Prod 3: Reverse Proxy** | **Prod 4: TLS SNI (Envoy)** |
 |---|---|---|---|---|---|
-| **Recommended for** | Dev / Test | Production (standard) | Production (simple) | Web-only production | Enterprise production |
-| **Complexity** | Low | Medium | Low-Medium | Medium | High |
-| **External ports** | 2 (7473, 7687) | 1 (443) | 2 (443, 7687) | 1 (443) | 1 (443) |
+| **Complexity** | Low | Medium | Medium | Medium | High |
+| **External ports** | 2 (7473, 7687) | 2 (443, 7687) | 2 (443, 7687) | 1 (443) | 1 (443) |
 | **SSL/TLS location** | Neo4j native | Ingress | Neo4j native | Proxy | Ingress |
-| **cert-manager** | ❌ | ✅ | ❌ | ✅ | ✅ |
 | **Driver support** | All | All | All | JS/WSS only | All |
 | **Neo4j directly exposed** | ✅ Yes | ❌ No | ❌ No | ❌ No | ❌ No |
 | **Bolt support** | ✅ | ✅ | ✅ | ⚠️ WSS only | ✅ |
 | **WAF / Rate limiting** | ❌ | ✅ | ❌ | ✅ | ✅ |
-| **Use case** | Dev/Test | Standard prod | Simple prod | Web-only prod | Complex prod |
 
 ---
 
@@ -99,7 +96,8 @@ graph TB
         end
     end
 
-    Client -->|TLS :443| IC
+    Client -->|HTTPS :443| IC
+    Client -->|Bolt+TLS :7687| IC
     IC -->|HTTP :7474| Neo4jHTTPS
     IC -->|Bolt :7687| Neo4jBolt
     Neo4jHTTPS --> Neo4j
