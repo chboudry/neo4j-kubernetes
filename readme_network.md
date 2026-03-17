@@ -1,82 +1,240 @@
 # Neo4j Kubernetes Network Architecture
 
-**Note:**
-- HTTPS server and Bolt access are on the same pod but they also can be split
-- Schema are focused on production where we favor HTTPS over HTTP, but you may find HTTP in subfolders because it is easier to start with from an implementation perspective as you don't deal with certificate.
+> This document covers recommended network architectures for exposing Neo4j on Kubernetes, ordered from most to least recommended for production use.
 
-## 1. Simple Configuration - Direct Load Balancer
+---
 
-**Features:**
+## Quick Decision Guide
 
-- Direct access to Neo4j ports via LoadBalancer service
-- Port 7473 for HTTPS web interface
-- Port 7687 for Bolt connections
-- Simplest configuration
+| | **Dev: Direct LB** | **Prod 1: Ingress TLS Termination** | **Prod 2: Ingress Passthrough** | **Prod 3: Reverse Proxy** | **Prod 4: TLS SNI (Envoy)** |
+|---|---|---|---|---|---|
+| **Recommended for** | Dev / Test | Production (standard) | Production (simple) | Web-only production | Enterprise production |
+| **Complexity** | Low | Medium | Low-Medium | Medium | High |
+| **External ports** | 2 (7473, 7687) | 1 (443) | 2 (443, 7687) | 1 (443) | 1 (443) |
+| **SSL/TLS location** | Neo4j native | Ingress | Neo4j native | Proxy | Ingress |
+| **cert-manager** | ❌ | ✅ | ❌ | ✅ | ✅ |
+| **Driver support** | All | All | All | JS/WSS only | All |
+| **Neo4j directly exposed** | ✅ Yes | ❌ No | ❌ No | ❌ No | ❌ No |
+| **Bolt support** | ✅ | ✅ | ✅ | ⚠️ WSS only | ✅ |
+| **WAF / Rate limiting** | ❌ | ✅ | ❌ | ✅ | ✅ |
+| **Use case** | Dev/Test | Standard prod | Simple prod | Web-only prod | Complex prod |
+
+---
+
+## Development: Direct LoadBalancer
+
+The simplest way to get started. The Neo4j Helm chart creates a `LoadBalancer` service by default, which provisions a public IP directly to the Neo4j pod. Suitable for development and testing only.
+
+**Do not use in production** — Neo4j is directly reachable from the internet, there is no TLS offloading, no WAF, and no centralized certificate management.
 
 ```mermaid
 graph TB
     subgraph "Internet"
         Client[Client Browser/App]
     end
-    
+
     subgraph "Kubernetes Cluster"
         subgraph "Services"
-            LB[LoadBalancer Service<br/>Neo4j:neo4j]
+            LB[LoadBalancer Service<br/>neo4j:neo4j]
         end
-        
         subgraph "Pods"
             Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt]
         end
     end
-    
+
     Client -->|HTTPS :7473| LB
     Client -->|Bolt :7687| LB
     LB -->|:7473| Neo4j
     LB -->|:7687| Neo4j
-    
+
     style Client fill:#e1f5fe
     style LB fill:#f3e5f5
     style Neo4j fill:#e8f5e8
 ```
 
-## 2. Reverse Proxy Configuration
+**Helm values:**
+```yaml
+# Default helm behavior — no change needed for dev
+neo4j:
+  services:
+    neo4j:
+      type: LoadBalancer
+```
 
-**This works only for javascript driver which is the only one to support web socket and applications built on top of it : Neo4j Browser, Bloom, NeoDash.**
+**Pros:**
+- Zero configuration, works out of the box
+- All drivers supported (native Bolt, no WebSocket wrapping)
 
-Other drivers and applications built on top of it (any ETL components) do not use wss but direct neo4j/bolt access.
+**Cons:**
+- Neo4j exposed directly to the internet
+- Not suitable for production
 
+---
 
-**Features:**
-- Reverse proxy for intelligent routing
-- SSL termination at proxy level
-- WebSocket Secure (WSS) for Bolt : 
-- Neo4j service as ClusterIP (internal)
+## Production Option 1 — Ingress with TLS Termination ✅ Recommended
+
+TLS is terminated at the Ingress Controller level. The Ingress decrypts traffic and forwards it in plaintext to Neo4j inside the cluster. Certificates are managed centrally via cert-manager.
+
+This is the **recommended approach** for most production deployments on Kubernetes, as it follows standard cloud-native practices and integrates well with the existing Ingress ecosystem.
 
 ```mermaid
 graph TB
     subgraph "Internet"
         Client[Client Browser/App]
     end
-    
+
     subgraph "Kubernetes Cluster"
-        subgraph "Services"
-            RPLB[LoadBalancer Service<br/>reverse-proxy]
-            Neo4jSvc[ClusterIP Service<br/>Neo4j:default ]
+        subgraph "Ingress"
+            IC[Ingress Controller<br/>TLS Termination :443]
         end
-        
+        subgraph "Services"
+            Neo4jHTTPS[ClusterIP Service<br/>neo4j-http :7474]
+            Neo4jBolt[ClusterIP Service<br/>neo4j-bolt :7687]
+        end
         subgraph "Pods"
-            RP[Reverse Proxy Pod<br/>nginx/traefik]
-            Neo4j[Neo4j Pod<br/>:7474 HTTPS<br/>:7687 Bolt]
+            Neo4j[Neo4j Pod<br/>:7474 HTTP<br/>:7687 Bolt - plaintext]
+        end
+        subgraph "Certificate Management"
+            CM[cert-manager]
         end
     end
-    
+
+    Client -->|TLS :443| IC
+    IC -->|HTTP :7474| Neo4jHTTPS
+    IC -->|Bolt :7687| Neo4jBolt
+    Neo4jHTTPS --> Neo4j
+    Neo4jBolt --> Neo4j
+    CM -.->|issues certs| IC
+
+    style Client fill:#e1f5fe
+    style IC fill:#e3f2fd
+    style Neo4jHTTPS fill:#f3e5f5
+    style Neo4jBolt fill:#f3e5f5
+    style Neo4j fill:#e8f5e8
+    style CM fill:#fff3e0
+```
+
+**Helm values:**
+```yaml
+neo4j:
+  services:
+    neo4j:
+      type: ClusterIP  # disable direct public exposure
+
+# Neo4j listens in plaintext internally
+config:
+  dbms.connector.https.enabled: "false"
+  dbms.connector.http.enabled: "true"
+  dbms.connector.bolt.tls_level: "DISABLED"
+```
+
+**Important:** Most HTTP Ingress controllers handle HTTPS natively, but Bolt (TCP) requires explicit TCP routing configuration. With Envoy Gateway or Traefik, a `TCPRoute` or `IngressRouteTCP` resource is needed.
+
+**Pros:**
+- Centralized certificate management with cert-manager and automatic rotation
+- Neo4j not exposed directly to the internet
+- Single entry point for the entire cluster
+- WAF, rate limiting, and access policies can be applied at Ingress level
+- All driver types supported (native Bolt, not limited to WebSocket)
+
+**Cons:**
+- Requires explicit TCP routing configuration for Bolt (not just a standard Ingress rule)
+- Traffic between Ingress and Neo4j is unencrypted — acceptable if the cluster network is trusted, but requires attention in multi-tenant environments
+
+---
+
+## Production Option 2 — Ingress with TLS Passthrough
+
+The Ingress forwards encrypted traffic as-is, without decrypting it. Neo4j handles TLS natively using its own certificates. This is a simpler alternative when you do not want to configure TCP termination at the Ingress level.
+
+```mermaid
+graph TB
+    subgraph "Internet"
+        Client[Client Browser/App]
+    end
+
+    subgraph "Kubernetes Cluster"
+        subgraph "Ingress"
+            IC[Ingress Controller<br/>TCP Passthrough :443 / :7687]
+        end
+        subgraph "Services"
+            Neo4jSvc[ClusterIP Service<br/>neo4j]
+        end
+        subgraph "Pods"
+            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt+TLS]
+        end
+    end
+
+    Client -->|TLS :443 passthrough| IC
+    Client -->|Bolt+TLS :7687 passthrough| IC
+    IC --> Neo4jSvc
+    Neo4jSvc --> Neo4j
+
+    style Client fill:#e1f5fe
+    style IC fill:#e3f2fd
+    style Neo4jSvc fill:#f3e5f5
+    style Neo4j fill:#e8f5e8
+```
+
+**Helm values:**
+```yaml
+neo4j:
+  services:
+    neo4j:
+      type: ClusterIP
+
+config:
+  dbms.connector.https.enabled: "true"
+  dbms.connector.bolt.tls_level: "REQUIRED"
+  dbms.ssl.policy.bolt.enabled: "true"
+  dbms.ssl.policy.https.enabled: "true"
+```
+
+**Pros:**
+- End-to-end encryption — traffic is never decrypted outside the Neo4j pod
+- Simpler Ingress configuration (no TCP termination needed)
+- Neo4j remains autonomous regarding its own TLS stack
+- Good fit for compliance requirements that mandate end-to-end encryption
+
+**Cons:**
+- Certificate management is done directly on Neo4j
+- Certificate rotation must be handled per instance
+- No possibility to apply WAF or L7 policies on Bolt traffic
+
+---
+
+## Production Option 3 — Reverse Proxy (WSS only)
+
+Neo4j reverse proxy sits in front of Neo4j and handles SSL termination. Bolt is exposed over WebSocket Secure (WSS) on port 443 (reverse proxy).
+
+> ⚠️ **Critical limitation 1 :** WSS is only supported by the **JavaScript driver**. This covers Neo4j Browser, Bloom, and NeoDash. All other drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **will not work** through a reverse proxy. If your use case includes any non-JS client, do not use this option alone — see the Hybrid option below.
+
+> ⚠️ **Critical limitation 2 :** Neo4j reverse proxy only redirects to unsecured HTTP and Bolt. This means you won't be able to enforce TLS at Neo4j level as required but only as optional : Reverse proxy will be unsecured while clients can choose wether or not to enforce SSL.
+
+```mermaid
+graph TB
+    subgraph "Internet"
+        Client[Web Browser<br/>Neo4j Browser / Bloom / NeoDash]
+    end
+
+    subgraph "Kubernetes Cluster"
+        subgraph "Services"
+            RPLB[LoadBalancer Service<br/>reverse-proxy :443]
+            Neo4jSvc[ClusterIP Service<br/>neo4j-internal]
+        end
+        subgraph "Pods"
+            RP[Reverse Proxy Pod<br/>Nginx / Traefik]
+            Neo4j[Neo4j Pod<br/>:7474 HTTP<br/>:7687 Bolt]
+        end
+    end
+
     Client -->|HTTPS :443| RPLB
     Client -->|WSS :443| RPLB
     RPLB --> RP
-    RP -->|HTTP/HTTPS :7474| Neo4jSvc
+    RP -->|HTTP :7474| Neo4jSvc
     RP -->|Bolt over WSS :7687| Neo4jSvc
     Neo4jSvc --> Neo4j
-    
+
     style Client fill:#e1f5fe
     style RPLB fill:#f3e5f5
     style RP fill:#fff3e0
@@ -84,121 +242,45 @@ graph TB
     style Neo4j fill:#e8f5e8
 ```
 
+**Pros:**
+- Single port (443) for both HTTPS and Bolt
+- Good for web-only access (Browser, Bloom, NeoDash)
 
-## 3. TLS SNI Configuration with Nginx Controller
+**Cons:**
+- Only works for the JavaScript driver (WSS)
+- Native Bolt drivers (Python, Java, Go, .NET, ETL tools) are not supported
+- Not suitable as the sole access method if non-JS clients exist
 
-We are using a single port (443) to access both HTTPS and Bolt. This is only possible with a Ingress Controller that support TLS SNI.
+**Hybrid variant:** If you need web access via reverse proxy *and* native Bolt for ETL or microservices, expose a separate `LoadBalancer` service for Bolt on a dedicated network or VPN:
 
-This also implies you can't set up this configuration without certificates and DNS.
-
-**Features:**
-- Ingress Controller with TLS SNI (example are with nginx)
-- Host-based routing (SNI)
-- Single port 443 for both services
-- Separation of HTTPS and Bolt services
-
-
-```mermaid
-graph TB
-    subgraph "Internet"
-        Client[Client Browser/App]
-    end
-    
-    subgraph "Kubernetes Cluster"
-        subgraph "Ingress"
-            IC[Nginx Ingress Controller<br/>TLS SNI :443]
-        end
-        
-        subgraph "Services"
-            Neo4jHTTPS[ClusterIP Service<br/>neo4j-https-svc<br/>:7474]
-            Neo4jBolt[ClusterIP Service<br/>neo4j-bolt-svc<br/>:7687]
-        end
-        
-        subgraph "Pods"
-            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt]
-        end
-        
-        subgraph "Ingress Rules"
-            HTTPSRule[HTTPS Ingress<br/>neo4j-web.domain.com]
-            BoltRule[TCP Ingress<br/>neo4j-bolt.domain.com]
-        end
-    end
-    
-    Client -->|HTTPS :443<br/>Host: neo4j-web.domain.com| IC
-    Client -->|Bolt :443<br/>Host: neo4j-bolt.domain.com| IC
-    
-    IC --> HTTPSRule
-    IC --> BoltRule
-    
-    HTTPSRule -->|:7473| Neo4jHTTPS
-    BoltRule -->|:7687| Neo4jBolt
-    
-    Neo4jHTTPS --> Neo4j
-    Neo4jBolt --> Neo4j
-    
-    style Client fill:#e1f5fe
-    style IC fill:#e3f2fd
-    style HTTPSRule fill:#f1f8e9
-    style BoltRule fill:#f1f8e9
-    style Neo4jHTTPS fill:#f3e5f5
-    style Neo4jBolt fill:#f3e5f5
-    style Neo4j fill:#e8f5e8
-```
-
-## 4. Hybrid Configuration - Reverse Proxy + Direct Bolt Access
-
-**Best of both worlds: Web interface through reverse proxy for internet access, direct Bolt access for internal applications and dedicated networks.**
-
-**This may be ideal if you want to provide access to Neo4j Browser, Bloom and Neodash through Internet, and need bolt port for ETL components or other applications/services using neo4j drivers.**
-
-**Keep in mind database IS accessible through wss, so security is identity.**
-
-**Features:**
-- Reverse proxy for HTTPS web interface (internet access)
-- Direct Bolt access via dedicated service for internal applications
-- Support for all driver types (not limited to WebSocket)
-- Ideal for ETL processes and internal microservices
-- Clear separation between public web access and internal data access
+> ⚠️ **Critical :**  Keep in mind you won't be able to enforce SSL REQUIRED for clients here because there is only one port for BOLT and we need an unsecure connection for the reverse proxy. 
 
 ```mermaid
 graph TB
     subgraph "Internet"
-        WebClient[Web Browser<br/>Neo4j Browser/Bloom]
+        WebClient[Web Browser]
     end
-    
-    subgraph "Dedicated Network/VPN"
-        InternalApp[Internal Applications<br/>ETL/Microservices]
+    subgraph "Dedicated Network / VPN"
+        InternalApp[ETL / Microservices]
     end
-    
+
     subgraph "Kubernetes Cluster"
-        subgraph "Services"
-            RPLB[LoadBalancer Service<br/>reverse-proxy<br/>:443]
-            BoltLB[LoadBalancer Service<br/>neo4j-bolt<br/>:7687]
-            Neo4jSvc[ClusterIP Service<br/>neo4j-internal]
-        end
-        
-        subgraph "Pods"
-            RP[Reverse Proxy Pod<br/>nginx/traefik]
-            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt]
-        end
-        
-        subgraph "Internal Cluster"
-            ClusterApp[Internal Pod<br/>Same Cluster App]
-        end
+        RPLB[LoadBalancer :443<br/>reverse-proxy]
+        BoltLB[LoadBalancer :7687<br/>neo4j-bolt — internal network]
+        RP[Reverse Proxy]
+        Neo4j[Neo4j Pod]
+        Neo4jSvc[ClusterIP neo4j-internal]
     end
-    
-    WebClient -->|HTTPS :443| RPLB
+
+    WebClient -->|HTTPS/WSS :443| RPLB
     InternalApp -->|Bolt :7687| BoltLB
-    ClusterApp -->|Bolt :7687| Neo4jSvc
-    
     RPLB --> RP
-    RP -->|HTTP/HTTPS :7473| Neo4jSvc
-    BoltLB -->|:7687| Neo4j
+    RP -->|HTTP/WSS| Neo4jSvc
+    BoltLB --> Neo4j
     Neo4jSvc --> Neo4j
-    
+
     style WebClient fill:#e1f5fe
     style InternalApp fill:#fff3e0
-    style ClusterApp fill:#f3e5f5
     style RPLB fill:#f3e5f5
     style BoltLB fill:#e8f5e8
     style RP fill:#fff3e0
@@ -206,26 +288,80 @@ graph TB
     style Neo4j fill:#e8f5e8
 ```
 
-**Use Cases:**
-- **Web Interface**: Accessible from internet via reverse proxy (HTTPS only)
-- **ETL Processes**: Direct Bolt access from dedicated network/VPN
-- **Internal Services**: Direct cluster-internal access via ClusterIP
-- **Monitoring Tools**: Can use either access method based on deployment location
+---
 
-## Approaches Comparison
+## Production Option 4 — TLS SNI with Envoy
 
-| Aspect | Simple LB | Reverse Proxy | TLS SNI | Hybrid |
-|--------|-----------|---------------|---------|---------|
-| **Complexity** | Low | Medium | High | Medium-High |
-| **External ports** | 2 (7473, 7687) | 1 (443) | 1 (443) | 2 (443, 7687) |
-| **SSL/TLS** | Neo4j native | Proxy termination | Ingress termination | Mixed |
-| **Routing** | Direct | Path/header based | SNI based | Mixed |
-| **Scalability** | Limited | Good | Excellent | Excellent |
-| **Driver support** | All | JS only (WSS) | All | All |
-| **Use case** | Dev/Test | Web-only prod | Complex production | Enterprise production |
+A single port 443 serves both HTTPS and Bolt, with routing based on TLS SNI (Server Name Indication). Envoy inspects the SNI header of the TLS handshake — without decrypting the payload — and routes to the appropriate backend.
+
+This requires DNS and valid certificates for both hostnames.
+
+```mermaid
+graph TB
+    subgraph "Internet"
+        Client[Client Browser/App]
+    end
+
+    subgraph "Kubernetes Cluster"
+        subgraph "Envoy"
+            IC[Envoy Gateway<br/>SNI routing :443]
+        end
+        subgraph "Services"
+            Neo4jHTTPS[ClusterIP Service<br/>neo4j-https :7473]
+            Neo4jBolt[ClusterIP Service<br/>neo4j-bolt :7687]
+        end
+        subgraph "Pods"
+            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt+TLS]
+        end
+        CM[cert-manager]
+    end
+
+    Client -->|TLS :443<br/>SNI: neo4j-web.domain.com| IC
+    Client -->|TLS :443<br/>SNI: neo4j-bolt.domain.com| IC
+    IC -->|:7473| Neo4jHTTPS
+    IC -->|:7687| Neo4jBolt
+    Neo4jHTTPS --> Neo4j
+    Neo4jBolt --> Neo4j
+    CM -.->|issues certs| IC
+
+    style Client fill:#e1f5fe
+    style IC fill:#e3f2fd
+    style Neo4jHTTPS fill:#f3e5f5
+    style Neo4jBolt fill:#f3e5f5
+    style Neo4j fill:#e8f5e8
+    style CM fill:#fff3e0
+```
+
+**Helm values:**
+```yaml
+neo4j:
+  services:
+    neo4j:
+      type: ClusterIP
+
+config:
+  dbms.connector.https.enabled: "true"
+  dbms.connector.bolt.tls_level: "REQUIRED"
+  dbms.ssl.policy.bolt.enabled: "true"
+  dbms.ssl.policy.https.enabled: "true"
+```
+
+**Pros:**
+- Single port 443 (TCP) for all traffic
+- All driver types supported (native Bolt, not limited to WebSocket)
+- Fine-grained routing without decrypting payload
+- cert-manager compatible
+- Suitable for strict compliance environments (end-to-end encryption)
+
+**Cons:**
+- Requires DNS and valid certificates configured before deployment
+- More complex to set up and operate than options 1 and 2
+- Envoy (or a SNI-capable Ingress) required — not all Ingress controllers support SNI-based TCP routing
+
+---
 
 ## Repository Structure
 
-- `gke/` - Google Kubernetes Engine specific configurations
-- `aks/` - Azure Kubernetes Service specific configurations
-- `local/` - Local cluster configurations
+- `gke/` — Google Kubernetes Engine configurations
+- `aks/` — Azure Kubernetes Service configurations  
+- `local/` — Local cluster configurations (Docker Compose, kind, minikube)
