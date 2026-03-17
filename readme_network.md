@@ -32,7 +32,8 @@ graph TB
 
     subgraph "Kubernetes Cluster"
         subgraph "Services"
-            LB[LoadBalancer Service<br/>neo4j:neo4j]
+            LB[PUBLIC IP<br/>LoadBalancer Service <br/> neo4j :7473 :7687]
+            Neo4jSvc[ClusterIP Service<br/>neo4j :7473 :7687]
         end
         subgraph "Pods"
             Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt]
@@ -41,11 +42,14 @@ graph TB
 
     Client -->|HTTPS :7473| LB
     Client -->|Bolt :7687| LB
-    LB -->|:7473| Neo4j
-    LB -->|:7687| Neo4j
+    LB -->|:7473| Neo4jSvc
+    LB -->|:7687| Neo4jSvc
+    Neo4jSvc -->|:7473| Neo4j
+    Neo4jSvc -->|:7687| Neo4j
 
     style Client fill:#e1f5fe
     style LB fill:#f3e5f5
+    style Neo4jSvc fill:#f3e5f5
     style Neo4j fill:#e8f5e8
 ```
 
@@ -85,8 +89,7 @@ graph TB
             IC[Ingress Controller<br/>TLS Termination :443]
         end
         subgraph "Services"
-            Neo4jHTTPS[ClusterIP Service<br/>neo4j-http :7474]
-            Neo4jBolt[ClusterIP Service<br/>neo4j-bolt :7687]
+            Neo4jSvc[ClusterIP Service<br/>neo4j :7474 :7687]
         end
         subgraph "Pods"
             Neo4j[Neo4j Pod<br/>:7474 HTTP<br/>:7687 Bolt - plaintext]
@@ -96,18 +99,16 @@ graph TB
         end
     end
 
-    Client -->|HTTPS :443| IC
-    Client -->|Bolt+TLS :7687| IC
-    IC -->|HTTP :7474| Neo4jHTTPS
-    IC -->|Bolt :7687| Neo4jBolt
-    Neo4jHTTPS --> Neo4j
-    Neo4jBolt --> Neo4j
+    Client -->|TLS :443| IC
+    Client -->|TLS :7687| IC
+    IC -->|HTTP :7474| Neo4jSvc
+    IC -->|Bolt :7687| Neo4jSvc
+    Neo4jSvc --> Neo4j
     CM -.->|issues certs| IC
 
     style Client fill:#e1f5fe
     style IC fill:#e3f2fd
-    style Neo4jHTTPS fill:#f3e5f5
-    style Neo4jBolt fill:#f3e5f5
+    style Neo4jSvc fill:#f3e5f5
     style Neo4j fill:#e8f5e8
     style CM fill:#fff3e0
 ```
@@ -156,7 +157,7 @@ graph TB
             IC[Ingress Controller<br/>TCP Passthrough :443 / :7687]
         end
         subgraph "Services"
-            Neo4jSvc[ClusterIP Service<br/>neo4j]
+            Neo4jSvc[ClusterIP Service<br/>neo4j :7474 :7687]
         end
         subgraph "Pods"
             Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt+TLS]
@@ -165,13 +166,15 @@ graph TB
 
     Client -->|TLS :443 passthrough| IC
     Client -->|Bolt+TLS :7687 passthrough| IC
-    IC --> Neo4jSvc
+    IC -->|HTTP :7474| Neo4jSvc
+    IC -->|Bolt :7687| Neo4jSvc
     Neo4jSvc --> Neo4j
 
     style Client fill:#e1f5fe
     style IC fill:#e3f2fd
     style Neo4jSvc fill:#f3e5f5
     style Neo4j fill:#e8f5e8
+
 ```
 
 **Helm values:**
@@ -217,10 +220,10 @@ graph TB
     subgraph "Kubernetes Cluster"
         subgraph "Services"
             RPLB[LoadBalancer Service<br/>reverse-proxy :443]
-            Neo4jSvc[ClusterIP Service<br/>neo4j-internal]
+            Neo4jSvc[ClusterIP Service<br/>neo4j :7474 :7687]
         end
         subgraph "Pods"
-            RP[Reverse Proxy Pod<br/>Nginx / Traefik]
+            RP[Neo4j Reverse Proxy<br/]
             Neo4j[Neo4j Pod<br/>:7474 HTTP<br/>:7687 Bolt]
         end
     end
@@ -262,24 +265,30 @@ graph TB
     end
 
     subgraph "Kubernetes Cluster"
-        RPLB[LoadBalancer :443<br/>reverse-proxy]
-        BoltLB[LoadBalancer :7687<br/>neo4j-bolt — internal network]
-        RP[Reverse Proxy]
-        Neo4j[Neo4j Pod]
-        Neo4jSvc[ClusterIP neo4j-internal]
+        subgraph "Services"
+            RPLB[PUBLIC IP <br/>LoadBalancer :443<br/>reverse-proxy]
+            BoltIngress[Ingress Controller<br/>Bolt :7687 — internal network]
+            Neo4jSvc[ClusterIP Service<br/>neo4j :7474 :7687]
+        end
+        subgraph "Pods"
+            RP[Reverse Proxy]
+            Neo4j[Neo4j Pod]
+        end
     end
 
     WebClient -->|HTTPS/WSS :443| RPLB
-    InternalApp -->|Bolt :7687| BoltLB
+    InternalApp -->|Bolt :7687| BoltIngress
     RPLB --> RP
-    RP -->|HTTP/WSS| Neo4jSvc
-    BoltLB --> Neo4j
-    Neo4jSvc --> Neo4j
+    RP -->|HTTP :7474| Neo4jSvc
+    RP -->|Bolt over WSS :7687| Neo4jSvc
+    BoltIngress -->|Bolt :7687| Neo4jSvc
+    Neo4jSvc -->|:7474| Neo4j
+    Neo4jSvc -->|:7687| Neo4j
 
     style WebClient fill:#e1f5fe
     style InternalApp fill:#fff3e0
     style RPLB fill:#f3e5f5
-    style BoltLB fill:#e8f5e8
+    style BoltIngress fill:#e3f2fd
     style RP fill:#fff3e0
     style Neo4jSvc fill:#f3e5f5
     style Neo4j fill:#e8f5e8
@@ -304,27 +313,27 @@ graph TB
             IC[Envoy Gateway<br/>SNI routing :443]
         end
         subgraph "Services"
-            Neo4jHTTPS[ClusterIP Service<br/>neo4j-https :7473]
-            Neo4jBolt[ClusterIP Service<br/>neo4j-bolt :7687]
+            Neo4jSvc[ClusterIP Service<br/>neo4j :7473 :7687]
         end
         subgraph "Pods"
             Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt+TLS]
         end
-        CM[cert-manager]
+        subgraph "Certificate Management"
+            CM[cert-manager]
+        end
     end
 
     Client -->|TLS :443<br/>SNI: neo4j-web.domain.com| IC
     Client -->|TLS :443<br/>SNI: neo4j-bolt.domain.com| IC
-    IC -->|:7473| Neo4jHTTPS
-    IC -->|:7687| Neo4jBolt
-    Neo4jHTTPS --> Neo4j
-    Neo4jBolt --> Neo4j
+    IC -->|:7473| Neo4jSvc
+    IC -->|:7687| Neo4jSvc
+    Neo4jSvc -->|:7473| Neo4j
+    Neo4jSvc -->|:7687| Neo4j
     CM -.->|issues certs| IC
 
     style Client fill:#e1f5fe
     style IC fill:#e3f2fd
-    style Neo4jHTTPS fill:#f3e5f5
-    style Neo4jBolt fill:#f3e5f5
+    style Neo4jSvc fill:#f3e5f5
     style Neo4j fill:#e8f5e8
     style CM fill:#fff3e0
 ```
