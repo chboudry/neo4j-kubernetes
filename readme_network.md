@@ -6,15 +6,18 @@
 
 ## Quick Decision Guide
 
-| | **Dev: Direct LB** | **Prod 1: Ingress TLS Termination** | **Prod 2: Ingress Passthrough** | **Prod 3: Reverse Proxy** | **Prod 4: TLS SNI (Envoy)** |
+| | **Dev: Direct LB** | **Prod 1: Ingress Passthrough** | **Prod 2: Ingress TLS Termination** | **Prod 3: Reverse Proxy** | **Prod 4: TLS SNI (Envoy)** |
 |---|---|---|---|---|---|
 | **Complexity** | Low | Medium | Medium | Medium | High |
 | **External ports** | 2 (7473, 7687) | 2 (443, 7687) | 2 (443, 7687) | 1 (443) | 1 (443) |
-| **SSL/TLS location** | Neo4j native | Ingress | Neo4j native | Proxy | Ingress |
+| **SSL/TLS location** | Neo4j native | Neo4j native | Ingress | Proxy | Ingress |
 | **Driver support** | All | All | All | JS/WSS only | All |
 | **Neo4j directly exposed** | ✅ Yes | ❌ No | ❌ No | ❌ No | ❌ No |
 | **Bolt support** | ✅ | ✅ | ✅ | ⚠️ WSS only | ✅ |
-| **WAF / Rate limiting** | ❌ | ✅ | ❌ | ✅ | ✅ |
+| **WAF / Rate limiting** | ❌ | ❌ | ✅ | ✅ | ✅ |
+| **[Client-side routing (cluster specific)](#client-side-routing)** | ✅ | ✅ | ✅ | ❌ | ✅ |
+
+> **Why Passthrough before TLS Termination?** Both TLS passthrough and TLS termination at the Ingress level are viable options. TLS termination has historically been the default recommendation — it simplifies certificate management (cert-manager in one place), reduces CPU load (centralized decryption), and makes internal traffic easier to debug. However, this approach relies on the assumption that the internal cluster network is trusted by default, which is precisely what a zero-trust model challenges. A compromised pod could eavesdrop on plaintext traffic between the Ingress and Neo4j, multi-tenant clusters have weaker trust boundaries, and regulations (PCI-DSS, HIPAA, NIS2) increasingly require end-to-end encryption. For these reasons, we now prefer TLS passthrough as the first production option, keeping traffic encrypted all the way to the Neo4j pod.
 
 ---
 
@@ -71,8 +74,69 @@ neo4j:
 - Not suitable for production
 
 ---
+## Production Option 1 — Ingress with TLS Passthrough
 
-## Production Option 1 — Ingress with TLS Termination ✅ Recommended
+The Ingress forwards encrypted traffic as-is, without decrypting it. Neo4j handles TLS natively using its own certificates. This is a simpler alternative when you do not want to configure TCP termination at the Ingress level.
+
+```mermaid
+graph TB
+    subgraph "Internet"
+        Client[Client Browser/App]
+    end
+
+    subgraph "Kubernetes Cluster"
+        subgraph "Ingress"
+            IC[Ingress Controller<br/>TCP Passthrough :443 / :7687]
+        end
+        subgraph "Services"
+            Neo4jSvc[ClusterIP Service<br/>neo4j :7473 :7687]
+        end
+        subgraph "Pods"
+            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt+TLS]
+        end
+    end
+
+    Client -->|TLS :443 passthrough| IC
+    Client -->|Bolt+TLS :7687 passthrough| IC
+    IC -->|HTTPS :7473| Neo4jSvc
+    IC -->|Bolt :7687| Neo4jSvc
+    Neo4jSvc --> Neo4j
+
+    style Client fill:#e1f5fe
+    style IC fill:#e3f2fd
+    style Neo4jSvc fill:#f3e5f5
+    style Neo4j fill:#e8f5e8
+
+```
+
+**Helm values:**
+```yaml
+neo4j:
+  services:
+    neo4j:
+      type: ClusterIP
+
+config:
+  dbms.connector.https.enabled: "true"
+  dbms.connector.bolt.tls_level: "REQUIRED"
+  dbms.ssl.policy.bolt.enabled: "true"
+  dbms.ssl.policy.https.enabled: "true"
+```
+
+**Pros:**
+- End-to-end encryption — traffic is never decrypted outside the Neo4j pod
+- Simpler Ingress configuration (no TCP termination needed)
+- Neo4j remains autonomous regarding its own TLS stack
+- Good fit for compliance requirements that mandate end-to-end encryption
+
+**Cons:**
+- Certificate management is done directly on Neo4j
+- Certificate rotation must be handled per instance
+- No possibility to apply WAF or L7 policies on Bolt traffic
+
+--- 
+
+## Production Option 2 — Ingress with TLS Termination
 
 TLS is terminated at the Ingress Controller level. The Ingress decrypts traffic and forwards it in plaintext to Neo4j inside the cluster. Certificates are managed centrally via cert-manager.
 
@@ -138,69 +202,7 @@ config:
 
 **Cons:**
 - Requires explicit TCP routing configuration for Bolt (not just a standard Ingress rule)
-- Traffic between Ingress and Neo4j is unencrypted — acceptable if the cluster network is trusted, but requires attention in multi-tenant environments
-
----
-
-## Production Option 2 — Ingress with TLS Passthrough
-
-The Ingress forwards encrypted traffic as-is, without decrypting it. Neo4j handles TLS natively using its own certificates. This is a simpler alternative when you do not want to configure TCP termination at the Ingress level.
-
-```mermaid
-graph TB
-    subgraph "Internet"
-        Client[Client Browser/App]
-    end
-
-    subgraph "Kubernetes Cluster"
-        subgraph "Ingress"
-            IC[Ingress Controller<br/>TCP Passthrough :443 / :7687]
-        end
-        subgraph "Services"
-            Neo4jSvc[ClusterIP Service<br/>neo4j :7474 :7687]
-        end
-        subgraph "Pods"
-            Neo4j[Neo4j Pod<br/>:7473 HTTPS<br/>:7687 Bolt+TLS]
-        end
-    end
-
-    Client -->|TLS :443 passthrough| IC
-    Client -->|Bolt+TLS :7687 passthrough| IC
-    IC -->|HTTP :7474| Neo4jSvc
-    IC -->|Bolt :7687| Neo4jSvc
-    Neo4jSvc --> Neo4j
-
-    style Client fill:#e1f5fe
-    style IC fill:#e3f2fd
-    style Neo4jSvc fill:#f3e5f5
-    style Neo4j fill:#e8f5e8
-
-```
-
-**Helm values:**
-```yaml
-neo4j:
-  services:
-    neo4j:
-      type: ClusterIP
-
-config:
-  dbms.connector.https.enabled: "true"
-  dbms.connector.bolt.tls_level: "REQUIRED"
-  dbms.ssl.policy.bolt.enabled: "true"
-  dbms.ssl.policy.https.enabled: "true"
-```
-
-**Pros:**
-- End-to-end encryption — traffic is never decrypted outside the Neo4j pod
-- Simpler Ingress configuration (no TCP termination needed)
-- Neo4j remains autonomous regarding its own TLS stack
-- Good fit for compliance requirements that mandate end-to-end encryption
-
-**Cons:**
-- Certificate management is done directly on Neo4j
-- Certificate rotation must be handled per instance
-- No possibility to apply WAF or L7 policies on Bolt traffic
+- Traffic between Ingress and Neo4j is unencrypted — **acceptable only if the cluster network is trusted**
 
 ---
 
@@ -208,7 +210,7 @@ config:
 
 Neo4j reverse proxy sits in front of Neo4j and handles SSL termination. Bolt is exposed over WebSocket Secure (WSS) on port 443 (reverse proxy).
 
-> ⚠️ **Critical limitation :** WSS is only supported by the **JavaScript driver**. This covers Neo4j Browser, Bloom, and NeoDash. All other drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **will not work** through a reverse proxy. If your use case includes any non-JS client, do not use this option alone — see the Hybrid option below.
+> ⚠️ **Critical limitation :** WSS is only supported by the **JavaScript driver** (and partially by Java Driver). This covers Neo4j Browser, Bloom, and NeoDash. All other drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **will not work** through a reverse proxy. If your use case includes any non-JS client, do not use this option alone — see the Hybrid option below.
 
 
 ```mermaid
@@ -363,6 +365,12 @@ config:
 - Requires DNS and valid certificates configured before deployment
 - More complex to set up and operate than options 1 and 2
 - Envoy (or a SNI-capable Ingress) required — not all Ingress controllers support SNI-based TCP routing
+
+---
+
+## Client-side routing
+
+In a Neo4j cluster, the driver can use [client-side routing](https://neo4j.com/docs/operations-manual/current/clustering/setup/routing/#clustering-client-side-routing) to discover and connect directly to individual cluster members. This requires each member to be reachable at its own address. Only the **Direct LoadBalancer** method supports this, since each Neo4j instance can be assigned its own external IP. All other methods (Ingress, Reverse Proxy, SNI) route traffic through a single entry point, making individual members unreachable from outside the cluster.
 
 ---
 
