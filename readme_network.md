@@ -205,9 +205,8 @@ config:
 
 Neo4j reverse proxy sits in front of Neo4j and handles SSL termination. Bolt is exposed over WebSocket Secure (WSS) on port 443 (reverse proxy).
 
-> ⚠️ **Critical limitation 1 :** WSS is only supported by the **JavaScript driver**. This covers Neo4j Browser, Bloom, and NeoDash. All other drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **will not work** through a reverse proxy. If your use case includes any non-JS client, do not use this option alone — see the Hybrid option below.
+> ⚠️ **Critical limitation :** WSS is only supported by the **JavaScript driver**. This covers Neo4j Browser, Bloom, and NeoDash. All other drivers (Python, Java, Go, .NET) and ETL tools use native Bolt and **will not work** through a reverse proxy. If your use case includes any non-JS client, do not use this option alone — see the Hybrid option below.
 
-> ⚠️ **Critical limitation 2 :** Neo4j reverse proxy only redirects to unsecured HTTP and Bolt. This means you won't be able to enforce TLS at Neo4j level as required but only as optional : Reverse proxy will be unsecured while clients can choose wether or not to enforce SSL.
 
 ```mermaid
 graph TB
@@ -251,7 +250,7 @@ graph TB
 
 **Hybrid variant:** If you need web access via reverse proxy *and* native Bolt for ETL or microservices, expose a separate `LoadBalancer` service for Bolt on a dedicated network or VPN:
 
-> ⚠️ **Critical :**  Keep in mind you won't be able to enforce SSL REQUIRED for clients here because there is only one port for BOLT and we need an unsecure connection for the reverse proxy. 
+> ⚠️ **Critical limitation:**  Neo4j reverse proxy only redirects to unsecured HTTP and Bolt. This means you won't be able to enforce TLS REQUIRED at Neo4j level but only as OPTIONAL : Reverse proxy will be unsecured while clients can **choose** wether or not to enforce SSL.
 
 ```mermaid
 graph TB
