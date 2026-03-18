@@ -15,7 +15,7 @@ flowchart TD
     W -->|browser + native app<br/>HTTPS + BOLT<br/>| M["<b>Architecture C</b><br/>Ingress with TLS termination<br/>port HTTPS + BOLT"]
     W -->|Neo4j browser only<br>HTTPS only| L["<b>Architecture D</b><br/>Neo4j reverse proxy<br/>port 443 only<br/>BOLT through Web Socket<br/>⚠️ driver support"]
     W -->|Browser in HTTPS only<br/>native app in BOLT| X["<b>Architecture E</b> (C+D)<br/>Ingress with TLS termination<br/>port HTTPS + BOLT + WSS"]
-    W -->|HTTPS only for all| Z[/"<b>Query API only</b><br/>⚠️ no driver support"/]
+    W -->|HTTPS only for all| Z[/"<b>Query API</b><br/>⚠️ driver support"/]
 ```
 
 | | **A: LoadBalancer** | **B: Ingress Passthrough** | **C: Ingress TLS Termination** | **D: Reverse Proxy** | **E: Ingress TLS + WSS** |
