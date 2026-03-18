@@ -1,9 +1,5 @@
 # Neo4j Kubernetes Network Architecture
 
-> This document covers recommended network architectures for exposing Neo4j on Kubernetes, ordered from most to least recommended for production use.
-
----
-
 ## Quick Decision Tree
 
 ```mermaid
