@@ -4,24 +4,37 @@
 
 ---
 
-## Quick Decision Guide
+## Quick Decision Tree
 
-| | **Dev: Direct LB** | **Prod 1: Ingress Passthrough** | **Prod 2: Ingress TLS Termination** | **Prod 3: Reverse Proxy** | **Prod 4: TLS SNI (Envoy)** |
+```mermaid
+flowchart TD
+    A{"Ingress Controller<br/>already in place?"}
+
+    A -->|yes| B{"TLS termination<br/>on the ingress?"}
+    A -->|no| G["Architecture A<br/>LoadBalancer"]
+
+    B -->|no| I["Architecture B<br/>Ingress with TLS passthrough"]
+    B -->|yes| W{"Client connectivity<br/>requirements?"}
+
+    W -->|Bolt TCP only| M["Architecture C<br/>Ingress with TLS termination<br/>port HTTPS + BOLT"]
+    W -->|WebSocket only| L["Architecture D<br/>Neo4j reverse proxy<br/>port 443 only"]
+    W -->|Mixed| X["Architecture E(C+D)<br/>Ingress with TLS termination<br/>port HTTPS + BOLT + WSS"]
+    W -->|HTTPS only| Z[/"Not possible<br/>Bolt requires<br/>its own channel"/]
+```
+
+| | **A: LoadBalancer** | **B: Ingress Passthrough** | **C: Ingress TLS Termination** | **D: Reverse Proxy** | **E: Ingress TLS + WSS** |
 |---|---|---|---|---|---|
-| **Complexity** | Low | Medium | Medium | Medium | High |
-| **External ports** | 2 (7473, 7687) | 2 (443, 7687) | 2 (443, 7687) | 1 (443) | 1 (443) |
-| **SSL/TLS location** | Neo4j native | Neo4j native | Ingress | Proxy | Ingress |
+| **External ports** | 2 (7473, 7687) | 2 (443, 7687) | 2 (443, 7687) | 1 (443) | 2 (443, 7687) |
+| **SSL/TLS location** | Neo4j native | Neo4j native | Ingress | Proxy | Ingress + Proxy |
 | **Driver support** | All | All | All | JS/WSS only | All |
-| **Neo4j directly exposed** | ✅ Yes | ❌ No | ❌ No | ❌ No | ❌ No |
 | **Bolt support** | ✅ | ✅ | ✅ | ⚠️ WSS only | ✅ |
 | **WAF / Rate limiting** | ❌ | ❌ | ✅ | ✅ | ✅ |
-| **[Client-side routing (cluster specific)](#client-side-routing)** | ✅ | ✅ | ✅ | ❌ | ✅ |
+| **[Client-side routing (cluster specific)](#client-side-routing)** | ✅ with as many LB as nodes| ✅ | ✅ | ❌ | ✅ |
 
-> **Why Passthrough before TLS Termination?** Both TLS passthrough and TLS termination at the Ingress level are viable options. TLS termination has historically been the default recommendation — it simplifies certificate management (cert-manager in one place), reduces CPU load (centralized decryption), and makes internal traffic easier to debug. However, this approach relies on the assumption that the internal cluster network is trusted by default, which is precisely what a zero-trust model challenges. A compromised pod could eavesdrop on plaintext traffic between the Ingress and Neo4j, multi-tenant clusters have weaker trust boundaries, and regulations (PCI-DSS, HIPAA, NIS2) increasingly require end-to-end encryption. For these reasons, we now prefer TLS passthrough as the first production option, keeping traffic encrypted all the way to the Neo4j pod.
 
 ---
 
-## Development: Direct LoadBalancer
+## Architecture A — LoadBalancer
 
 The simplest way to get started. The Neo4j Helm chart creates a `LoadBalancer` service by default, which provisions a public IP directly to the Neo4j pod. Suitable for development and testing only.
 
@@ -74,7 +87,7 @@ neo4j:
 - Not suitable for production
 
 ---
-## Production Option 1 — Ingress with TLS Passthrough
+## Architecture B — Ingress with TLS Passthrough
 
 The Ingress forwards encrypted traffic as-is, without decrypting it. Neo4j handles TLS natively using its own certificates. This is a simpler alternative when you do not want to configure TCP termination at the Ingress level.
 
@@ -136,7 +149,7 @@ config:
 
 --- 
 
-## Production Option 2 — Ingress with TLS Termination
+## Architecture C — Ingress with TLS Termination
 
 TLS is terminated at the Ingress Controller level. The Ingress decrypts traffic and forwards it in plaintext to Neo4j inside the cluster. Certificates are managed centrally via cert-manager.
 
@@ -206,7 +219,7 @@ config:
 
 ---
 
-## Production Option 3 — Reverse Proxy (WSS only)
+## Architecture D — Reverse Proxy (WSS only)
 
 Neo4j reverse proxy sits in front of Neo4j and handles SSL termination. Bolt is exposed over WebSocket Secure (WSS) on port 443 (reverse proxy).
 
@@ -253,7 +266,11 @@ graph TB
 - Native Bolt drivers (Python, Java, Go, .NET, ETL tools) are not supported
 - Not suitable as the sole access method if non-JS clients exist
 
-**Hybrid variant:** If you need web access via reverse proxy *and* native Bolt for ETL or microservices, expose a separate `LoadBalancer` service for Bolt on a dedicated network or VPN:
+---
+
+## Architecture E — Ingress TLS Termination + WSS
+
+If you need web access via reverse proxy (WSS) *and* native Bolt for ETL or microservices, this architecture combines an Ingress Controller for Bolt with a Reverse Proxy for WebSocket traffic.
 
 > ⚠️ **Critical limitation:**  Neo4j reverse proxy only redirects to unsecured HTTP and Bolt. This means you won't be able to enforce TLS REQUIRED at Neo4j level but only as OPTIONAL : Reverse proxy will be unsecured while clients can **choose** wether or not to enforce SSL.
 
@@ -296,9 +313,20 @@ graph TB
     style Neo4j fill:#e8f5e8
 ```
 
+**Pros:**
+- All driver types supported (native Bolt via Ingress + WSS via Reverse Proxy)
+- Web clients (Browser, Bloom, NeoDash) work through the reverse proxy
+- ETL and microservices connect via native Bolt through the Ingress
+- WAF and rate limiting can be applied at both Ingress and proxy level
+
+**Cons:**
+- Higher complexity — two ingress paths to manage
+- Neo4j reverse proxy does not support TLS to Neo4j, so internal traffic from the proxy is unencrypted
+- TLS REQUIRED cannot be enforced at Neo4j level (only OPTIONAL)
+
 ---
 
-## Production Option 4 — TLS SNI with Envoy
+## Additional: TLS SNI with Envoy
 
 A single port 443 serves both HTTPS and Bolt, with routing based on TLS SNI (Server Name Indication). Envoy inspects the SNI header of the TLS handshake — without decrypting the payload — and routes to the appropriate backend.
 
@@ -363,7 +391,7 @@ config:
 
 **Cons:**
 - Requires DNS and valid certificates configured before deployment
-- More complex to set up and operate than options 1 and 2
+- More complex to set up and operate than architectures B and C
 - Envoy (or a SNI-capable Ingress) required — not all Ingress controllers support SNI-based TCP routing
 
 ---
