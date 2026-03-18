@@ -7,15 +7,15 @@ flowchart TD
     A{"Ingress Controller<br/>already in place?"}
 
     A -->|yes| B{"TLS termination<br/>on the ingress?"}
-    A -->|no| G["Architecture A<br/>LoadBalancer"]
+    A -->|no| G["<b>Architecture A</b><br/>LoadBalancer"]
 
-    B -->|no| I["Architecture B<br/>Ingress with TLS passthrough"]
+    B -->|no| I["<b>Architecture B</b><br/>Ingress with TLS passthrough"]
     B -->|yes| W{"Client connectivity<br/>requirements?"}
 
-    W -->|**HTTPS & BOLT**<br/>Multiple client types<br/>browser + native app| M["Architecture C<br/>Ingress with TLS termination<br/>port HTTPS + BOLT"]
-    W -->|**HTTPS only for browser**<br/> Bolt through WSS| L["Architecture D<br/>Neo4j reverse proxy<br/>port 443 only<br/>⚠️ driver support"]
-    W -->|**HTTPS only for Browser**<br/>**BOLT for native app**<br/>| X["Architecture E(C+D)<br/>Ingress with TLS termination<br/>port HTTPS + BOLT + WSS"]
-    W -->|**HTTPS only for all**| Z[/Query API only<br/>⚠️ driver support/]
+    W -->|browser + native app<br/>HTTPS + BOLT<br/>| M["<b>Architecture C</b><br/>Ingress with TLS termination<br/>port HTTPS + BOLT"]
+    W -->|Neo4j browser only<br>HTTPS only| L["<b>Architecture D</b><br/>Neo4j reverse proxy<br/>port 443 only<br/>BOLT through Web Socket<br/>⚠️ driver support"]
+    W -->|Browser in HTTPS only<br/>native app in BOLT| X["<b>Architecture E</b> (C+D)<br/>Ingress with TLS termination<br/>port HTTPS + BOLT + WSS"]
+    W -->|HTTPS only for all| Z[/"<b>Query API only</b><br/>⚠️ no driver support"/]
 ```
 
 | | **A: LoadBalancer** | **B: Ingress Passthrough** | **C: Ingress TLS Termination** | **D: Reverse Proxy** | **E: Ingress TLS + WSS** |
