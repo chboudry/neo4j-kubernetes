@@ -1,6 +1,6 @@
 # Neo4j Kubernetes Network Architecture
 
-## Quick Decision Tree
+## Decision Tree
 
 ```mermaid
 flowchart TD
@@ -32,9 +32,9 @@ flowchart TD
 
 ## Architecture A — LoadBalancer
 
-The simplest way to get started. The Neo4j Helm chart creates a `LoadBalancer` service by default, which provisions a public IP directly to the Neo4j pod. Suitable for development and testing only.
+The simplest way to get started. The Neo4j Helm chart creates a `LoadBalancer` service by default, which provisions a public IP directly to the Neo4j pod.
 
-**Do not use in production** — Neo4j is directly reachable from the internet, there is no TLS offloading, no WAF, and no centralized certificate management.
+**Neo4j is directly reachable from the internet**. You can filter IP sources at the load balancer level.
 
 ```mermaid
 graph TB
@@ -80,7 +80,6 @@ neo4j:
 
 **Cons:**
 - Neo4j exposed directly to the internet
-- Not suitable for production
 
 ---
 ## Architecture B — Ingress with TLS Passthrough
