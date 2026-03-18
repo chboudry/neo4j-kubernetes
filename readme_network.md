@@ -12,10 +12,10 @@ flowchart TD
     B -->|no| I["Architecture B<br/>Ingress with TLS passthrough"]
     B -->|yes| W{"Client connectivity<br/>requirements?"}
 
-    W -->|Bolt TCP only| M["Architecture C<br/>Ingress with TLS termination<br/>port HTTPS + BOLT"]
-    W -->|WebSocket only| L["Architecture D<br/>Neo4j reverse proxy<br/>port 443 only"]
-    W -->|Mixed| X["Architecture E(C+D)<br/>Ingress with TLS termination<br/>port HTTPS + BOLT + WSS"]
-    W -->|HTTPS only| Z[/"Not possible<br/>Bolt requires<br/>its own channel"/]
+    W -->|**HTTPS & BOLT**<br/>Multiple client types<br/>browser + native app| M["Architecture C<br/>Ingress with TLS termination<br/>port HTTPS + BOLT"]
+    W -->|**HTTPS only for browser**<br/> Bolt through WSS| L["Architecture D<br/>Neo4j reverse proxy<br/>port 443 only<br/>⚠️ driver support"]
+    W -->|**HTTPS only for Browser**<br/>**BOLT for native app**<br/>| X["Architecture E(C+D)<br/>Ingress with TLS termination<br/>port HTTPS + BOLT + WSS"]
+    W -->|**HTTPS only for all**| Z[/Query API only<br/>⚠️ driver support/]
 ```
 
 | | **A: LoadBalancer** | **B: Ingress Passthrough** | **C: Ingress TLS Termination** | **D: Reverse Proxy** | **E: Ingress TLS + WSS** |
