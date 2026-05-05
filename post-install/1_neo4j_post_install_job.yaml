@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: neo4j-post-install-credentials
+  namespace: application
+type: Opaque
+stringData:
+  # Must match the current neo4j admin password configured in your Helm values.
+  NEO4J_ADMIN_PASSWORD: "my-initial-password"
+  # Local account passwords created by the post-install job.
+  APP_READER_PASSWORD: "ChangeMeReader!2026"
+  APP_WRITER_PASSWORD: "ChangeMeWriter!2026"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: neo4j-post-install
+  namespace: application
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: neo4j-post-install-runner
+          image: neo4j:2025.12.1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NEO4J_URI
+              value: neo4j://my-neo4j-release.application.svc.cluster.local:7687
+            - name: NEO4J_ADMIN_USER
+              value: neo4j
+            - name: NEO4J_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: neo4j-post-install-credentials
+                  key: NEO4J_ADMIN_PASSWORD
+            - name: APP_READER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: neo4j-post-install-credentials
+                  key: APP_READER_PASSWORD
+            - name: APP_WRITER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: neo4j-post-install-credentials
+                  key: APP_WRITER_PASSWORD
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              set -euo pipefail
+
+              echo "Environment:"
+              echo "  NEO4J_URI: ${NEO4J_URI}"
+              echo "  NEO4J_ADMIN_USER: ${NEO4J_ADMIN_USER}"
+              echo "  APP_READER_PASSWORD: [REDACTED]"
+              echo "  APP_WRITER_PASSWORD: [REDACTED]"
+
+              echo "Waiting for Neo4j to be reachable..."
+              RETRY_COUNT=0
+              MAX_RETRIES=60
+              
+              until cypher-shell \
+                --address "${NEO4J_URI}" \
+                --username "${NEO4J_ADMIN_USER}" \
+                --password "${NEO4J_ADMIN_PASSWORD}" \
+                --database system \
+                "SHOW DATABASES YIELD name" >/dev/null 2>&1; do
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                if [ $RETRY_COUNT -gt $MAX_RETRIES ]; then
+                  echo "ERROR: Failed to connect to Neo4j after $MAX_RETRIES attempts (300 seconds)"
+                  exit 1
+                fi
+                echo "Attempt $RETRY_COUNT/$MAX_RETRIES: Neo4j not ready yet, waiting 5 seconds..."
+                sleep 5
+              done
+
+              echo "SUCCESS: Neo4j is reachable!"
+              echo "Running Neo4j post-install configuration..."
+
+              cypher-shell \
+                --address "${NEO4J_URI}" \
+                --username "${NEO4J_ADMIN_USER}" \
+                --password "${NEO4J_ADMIN_PASSWORD}" \
+                --database system \
+                --param "readerPassword => '${APP_READER_PASSWORD}'" \
+                --param "writerPassword => '${APP_WRITER_PASSWORD}'" <<'CYPHER'
+              // =========================
+              // DATABASE SECTION
+              // =========================
+              CREATE DATABASE alertdb IF NOT EXISTS;
+
+              // =========================
+              // IDENTITY SECTION
+              // =========================
+              CREATE USER app_reader IF NOT EXISTS SET PASSWORD $readerPassword CHANGE NOT REQUIRED;
+              CREATE USER app_writer IF NOT EXISTS SET PASSWORD $writerPassword CHANGE NOT REQUIRED;
+
+              CREATE ROLE alert_reader IF NOT EXISTS;
+              CREATE ROLE alert_writer IF NOT EXISTS;
+
+              // Permissions on neo4j and alertdb for read role
+              GRANT ACCESS ON DATABASE neo4j TO alert_reader;
+              GRANT ACCESS ON DATABASE alertdb TO alert_reader;
+              GRANT MATCH {*} ON GRAPH neo4j TO alert_reader;
+              GRANT MATCH {*} ON GRAPH alertdb TO alert_reader;
+
+              // Permissions on neo4j and alertdb for write role
+              GRANT ACCESS ON DATABASE neo4j TO alert_writer;
+              GRANT ACCESS ON DATABASE alertdb TO alert_writer;
+              GRANT MATCH {*} ON GRAPH neo4j TO alert_writer;
+              GRANT WRITE ON GRAPH neo4j TO alert_writer;
+              GRANT MATCH {*} ON GRAPH alertdb TO alert_writer;
+              GRANT WRITE ON GRAPH alertdb TO alert_writer;
+
+              // Role assignments
+              GRANT ROLE alert_reader TO app_reader;
+              GRANT ROLE alert_writer TO app_writer;
+              CYPHER
+
+              echo "SUCCESS: Neo4j post-install configuration completed."

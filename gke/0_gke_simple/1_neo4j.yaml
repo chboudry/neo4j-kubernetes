@@ -19,47 +19,5 @@ volumes:
       # * standard provisions HDD disks
       storageClassName: premium-rwo
 
-  licenses:
-    disableSubPathExpr: true
-    mode: volume
-    volume:
-      secret:
-        secretName: license
-        items:
-          - key: gds.license
-            path: gds.license
-
-ssl:
-  bolt:
-    privateKey:
-      secretName: neo4j-tls
-      subPath: tls.key
-    publicCertificate:
-      secretName: neo4j-tls
-      subPath: tls.crt
-  https:
-    privateKey:
-      secretName: neo4j-tls
-      subPath: tls.key
-    publicCertificate:
-      secretName: neo4j-tls
-      subPath: tls.crt
-    trustedCerts:
-      sources:
-      - secret:
-          name: neo4j-tls
-          items:
-          - key: tls.crt
-            path: public.crt
-            
-env:
-  NEO4J_PLUGINS: '["graph-data-science"]'
-
-config:
-  gds.enterprise.license_file: "/licenses/gds.license"
-  dbms.security.procedures.unrestricted: "gds.*"
-  dbms.ssl.policy.https.verify_hostname: "false"
-  dbms.ssl.policy.bolt.verify_hostname: "true"
-
 podSpec:
   podAntiAffinity: false
