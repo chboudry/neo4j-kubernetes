@@ -1,6 +1,6 @@
 # 1. Apply post install
 ```
-kubectl apply -f post-install/1_neo4j_post_install_job.yaml
+kubectl apply -f post-install/neo4j_post_install_job.yaml
 ```
 # 2. Check Status
 ```

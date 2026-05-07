@@ -1,0 +1,90 @@
+# Neo4j daily backup to GCP bucket
+# Deploy with: helm install neo4j-backup neo4j/neo4j-admin -f neo4j_backup.yaml
+# Reference: https://github.com/neo4j/helm-charts/blob/dev/neo4j-admin/values.yaml
+
+neo4j:
+  image: "neo4j/helm-charts-backup"
+  imageTag: "2026.4.0"
+
+  # Daily backup at 2:00 AM
+  jobSchedule: "0 2 * * *"
+
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  backoffLimit: 3
+
+backup:
+  # GCP native cloud storage — direct upload to GCS bucket
+  cloudProvider: "gcp"
+
+  # Target GCS bucket name (must already exist)
+  # Example: "my-neo4j-backups" or "my-neo4j-backups/daily" for a sub-prefix
+  bucketName: "chboudry-import-bucket"
+
+  # Databases to back up (comma-separated)
+  database: "neo4j,system"
+
+  # Admin service endpoint — format: <admin-service-name>.<namespace>.svc.cluster.local:<port>
+  # Example: standalone-admin.default.svc.cluster.local:6362
+  databaseAdminServiceName: "my-neo4j-release-admin"
+  databaseNamespace: "application"
+  databaseBackupPort: "6362"
+  databaseClusterDomain: "cluster.local"
+
+  # GCP credentials secret
+  # Leave secretName empty when using Workload Identity (see serviceAccountName below)
+  secretName: "neo4j-backup-sa"
+  secretKeyName: "key.json"
+
+  # Backup options
+  includeMetadata: "all"
+  type: "AUTO"
+  compress: true
+  verbose: true
+  keepFailed: false
+  parallelRecovery: false
+
+  # Enable differential backups — subsequent backups only store changes
+  preferDiffAsParent: true
+
+  keepBackupFiles: true
+
+consistencyCheck:
+  enable: true
+  checkIndexes: true
+  checkGraph: true
+  checkCounts: true
+  checkPropertyOwners: true
+  # Check all backed-up databases (leave empty to match backup.database)
+  database: ""
+  verbose: true
+  timeout: "1h"
+
+# Uncomment to use GKE Workload Identity instead of a credentials secret
+# serviceAccountName: "neo4j-backup-sa"
+
+resources:
+  requests:
+    ephemeralStorage: "4Gi"
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    ephemeralStorage: "5Gi"
+    cpu: "1"
+    memory: "2Gi"
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 7474
+  runAsGroup: 7474
+  fsGroup: 7474
+  fsGroupChangePolicy: "Always"
+
+containerSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 7474
+  runAsGroup: 7474
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]

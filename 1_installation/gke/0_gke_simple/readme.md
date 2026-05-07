@@ -5,7 +5,7 @@
 **Network Architecture:**
 - Plain and simple Neo4j service as Load Balancer : directly accessible from outside
 
-# 1. Prerequisites you might need
+# 1. Prerequisites
 
 ## Variables
 ```
