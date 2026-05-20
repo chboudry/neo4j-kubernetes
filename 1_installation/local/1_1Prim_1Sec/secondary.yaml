@@ -1,0 +1,22 @@
+neo4j:
+  name: myneo4j
+  edition: enterprise
+  acceptLicenseAgreement: "yes"
+
+volumes:
+  data:
+    mode: defaultStorageClass
+
+services:
+  neo4j:
+    enabled: false
+  internals:
+    enabled: true
+
+analytics:
+  enabled: true
+  type:
+    name: secondary
+
+podSpec:
+  podAntiAffinity: false
