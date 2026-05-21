@@ -1,4 +1,6 @@
 #  Grafana 
+
+```
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
@@ -9,14 +11,19 @@ kubectl get secret grafana \
 
 
 kubectl port-forward svc/grafana 3000:80
+```
 
 http://localhost:3000
-
+```
 user: admin
 password: 
+```
 
+Graphana query examples for loki:
+```
 {namespace="neo4j"}
 {job="neo4j"} |= "ERROR"
 {job="neo4j"} |= "WARNING"
 {job="neo4j",file=~".*neo4j.log"}
 {job="neo4j",file=~".*security.log"}
+```

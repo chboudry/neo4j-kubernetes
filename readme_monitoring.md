@@ -10,6 +10,10 @@ Prometheus then scrapes this endpoint at regular intervals to collect metrics. T
 
 # Logs
 
+There are several ways to access Neo4j logs: directly from the pod using `kubectl logs` or `kubectl exec`, by mounting the log PVC into another pod, or by using a storage backend accessible from outside the cluster, such as cloud storage.
+
+This guide focuses on **shipping logs to a centralized log collection platform**.
+
 ## Strategy
 
 Two collection strategies are available: Sidecar and DaemonSet.
