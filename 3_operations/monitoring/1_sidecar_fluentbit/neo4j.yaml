@@ -1,0 +1,63 @@
+neo4j:
+  name: myneo4j
+  edition: enterprise
+  acceptLicenseAgreement: "yes"
+  password: "my-password0"
+
+volumes:
+  data:
+    mode: defaultStorageClass
+    defaultStorageClass:
+      requests:
+        storage: 10Gi
+      accessModes:
+        - ReadWriteOnce
+  logs:
+    mode: defaultStorageClass
+    defaultStorageClass:
+      requests:
+        storage: 5Gi
+      accessModes:
+        - ReadWriteOnce
+
+services:
+  neo4j:
+    enabled: true
+  internals:
+    enabled: true
+
+config:
+  dbms.security.auth_enabled: "true"
+  server.metrics.enabled: "true"
+  server.metrics.prometheus.enabled: "true"
+  server.metrics.prometheus.endpoint: "0.0.0.0:2004"
+
+additionalVolumes:
+  - name: fluent-bit-config
+    configMap:
+      name: neo4j-fluent-bit-config
+
+
+podSpec:
+  podAntiAffinity: false
+  containers:
+    - name: fluent-bit
+      image: fluent/fluent-bit:latest
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+      volumeMounts:
+        - name: logs
+          mountPath: /logs
+          subPathExpr: logs/$(POD_NAME)
+          readOnly: true
+
+        - name: fluent-bit-config
+          mountPath: /fluent-bit/etc/
+          readOnly: true

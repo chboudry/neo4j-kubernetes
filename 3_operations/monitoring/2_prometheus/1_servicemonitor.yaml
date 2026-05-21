@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: neo4j
+  namespace: default
+  labels:
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - neo4j
+  selector:
+    matchLabels:
+      app: myneo4j
+  endpoints:
+    - port: tcp-prometheus # kubectl -n neo4j describe svc primary-admin  + grep port
+      path: /metrics
+      interval: 30s
