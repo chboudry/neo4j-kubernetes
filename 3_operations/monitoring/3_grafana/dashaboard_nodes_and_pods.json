@@ -1,0 +1,407 @@
+{
+  "title": "Neo4j Server Health - Nodes and Pods",
+  "uid": "neo4j-server-health-node-pod",
+  "schemaVersion": 42,
+  "version": 1,
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "editable": true,
+  "tags": ["neo4j", "prometheus", "kubernetes"],
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "type": "query",
+        "label": "Node",
+        "datasource": { "uid": "Prometheus" },
+        "query": "label_values(kube_pod_info{namespace=\"neo4j\"}, node)",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "pod",
+        "type": "query",
+        "label": "Neo4j Pod",
+        "datasource": { "uid": "Prometheus" },
+        "query": "label_values(kube_pod_info{namespace=\"neo4j\",node=\"$node\"}, pod)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Kubernetes nodes hosting Neo4j",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(count by (node) (kube_pod_info{namespace=\"neo4j\"}))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0 },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Neo4j pods",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(kube_pod_info{namespace=\"neo4j\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0 },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Operational databases",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(neo4j_dbms_db_state_count_hosted{service=~\".*-admin\"}) / sum(neo4j_dbms_db_state_count_desired_started{service=~\".*-admin\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "orange", "value": 0.99 },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Failed databases",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(neo4j_dbms_db_state_count_failed{service=~\".*-admin\"})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "none"
+      }
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Selected node: $node",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 4 }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Neo4j CPU on selected node",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"neo4j\",container=\"neo4j\"}[5m]) * on(namespace,pod) group_left(node) kube_pod_info{namespace=\"neo4j\",node=\"$node\"})",
+          "legendFormat": "Neo4j CPU cores"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "cores" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Neo4j memory on selected node",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(container_memory_working_set_bytes{namespace=\"neo4j\",container=\"neo4j\"} * on(namespace,pod) group_left(node) kube_pod_info{namespace=\"neo4j\",node=\"$node\"})",
+          "legendFormat": "Working set"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Neo4j GC activity on selected node",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(neo4j_dbms_vm_gc_time_total{service=~\".*-admin\"}[5m]) * on(pod) group_left(node) kube_pod_info{namespace=\"neo4j\",node=\"$node\"})",
+          "legendFormat": "GC time / sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Selected pod: $pod",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 }
+    },
+    {
+      "id": 10,
+      "type": "gauge",
+      "title": "Heap usage",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 0, "y": 14 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "neo4j_dbms_vm_heap_used{service=~\".*-admin\",pod=\"$pod\"} / neo4j_dbms_vm_heap_max{service=~\".*-admin\",pod=\"$pod\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "orange", "value": 0.75 },
+              { "color": "red", "value": 0.9 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "gauge",
+      "title": "Page cache hit ratio",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 6, "y": 14 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "neo4j_database_neo4j_db_page_cache_hit_ratio{service=~\".*-admin\",pod=\"$pod\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": 0 },
+              { "color": "orange", "value": 0.8 },
+              { "color": "green", "value": 0.95 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "stat",
+      "title": "Active transactions",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 12, "y": 14 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "neo4j_database_neo4j_db_transaction_active{service=~\".*-admin\",pod=\"$pod\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0 },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "Bolt running connections",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 7, "w": 6, "x": 18, "y": 14 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "neo4j_dbms_bolt_connections_running{service=~\".*-admin\",pod=\"$pod\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 0 },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "colorMode": "background",
+        "graphMode": "area"
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Query execution rate",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(neo4j_database_neo4j_db_query_execution_total{service=~\".*-admin\",pod=\"$pod\"}[5m])",
+          "legendFormat": "Queries / sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Transactions",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(neo4j_database_neo4j_db_transaction_committed_total{service=~\".*-admin\",pod=\"$pod\"}[5m])",
+          "legendFormat": "Committed / sec"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(neo4j_database_neo4j_db_transaction_rollbacks_total{service=~\".*-admin\",pod=\"$pod\"}[5m])",
+          "legendFormat": "Rollbacks / sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Bolt connections",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 29 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "neo4j_dbms_bolt_connections_running{service=~\".*-admin\",pod=\"$pod\"}",
+          "legendFormat": "Running"
+        },
+        {
+          "refId": "B",
+          "expr": "neo4j_dbms_bolt_connections_idle{service=~\".*-admin\",pod=\"$pod\"}",
+          "legendFormat": "Idle"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(neo4j_dbms_bolt_connections_opened_total{service=~\".*-admin\",pod=\"$pod\"}[5m])",
+          "legendFormat": "Opened / sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Page cache activity",
+      "datasource": { "uid": "Prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 29 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(neo4j_database_neo4j_db_page_cache_hits_total{service=~\".*-admin\",pod=\"$pod\"}[5m])",
+          "legendFormat": "Hits / sec"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(neo4j_database_neo4j_db_page_cache_faults_total{service=~\".*-admin\",pod=\"$pod\"}[5m])",
+          "legendFormat": "Faults / sec"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      }
+    }
+  ]
+}

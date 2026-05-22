@@ -15,6 +15,7 @@
       }
     ]
   },
+  "description": "Indicates whether all databases on the server are online.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
