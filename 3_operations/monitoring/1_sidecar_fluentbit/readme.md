@@ -1,5 +1,10 @@
 Configmap targets neo4j in neo4j namespace
 Edit configmap if you installed neo4j somewhere else
+
+Note : metrics are filtered by default and you only have a subset of them. You can review this here : https://neo4j.com/docs/operations-manual/current/configuration/configuration-settings/#config_server.metrics.filter
+
+
+
 ```
 kubectl apply -n neo4j -f 3_operations/monitoring/1_sidecar_fluentbit/configmap.yaml 
 
