@@ -1,0 +1,64 @@
+neo4j:
+  name: standalone
+  edition: "enterprise"
+  acceptLicenseAgreement: "yes"
+  # Mot de passe fourni via un secret Kubernetes (clé NEO4J_AUTH = neo4j/<password>)
+  # au lieu d'une valeur en clair. Voir readme.md pour créer le secret.
+  passwordFromSecret: neo4j-auth
+  # Ressources réduites pour un cluster local (kind/minikube).
+  resources:
+    cpu: "1"
+    memory: "4Gi"
+
+# --- Plugins ---------------------------------------------------------------
+# Téléchargement/activation des plugins gérés par Neo4j (apoc, GDS, bloom).
+env:
+  NEO4J_PLUGINS: '["apoc", "graph-data-science", "bloom"]'
+
+volumes:
+  # Volume data classique (en local on utilise la storageClass par défaut
+  # au lieu du PVC pré-provisionné du client).
+  data:
+    mode: defaultStorageClass
+    defaultStorageClass:
+      requests:
+        storage: 5Gi
+
+  # Volume "licenses" : monte le secret contenant les licences GDS et Bloom
+  # dans /licenses (référencé plus bas par gds/bloom.license_file).
+  licenses:
+    disableSubPathExpr: true
+    mode: volume
+    volume:
+      secret:
+        secretName: gds-bloom-license
+        items:
+          - key: gds.license
+            path: gds.license
+          - key: bloom.license
+            path: bloom.license
+
+  # Le volume "plugins" partage le volume "data".
+  plugins:
+    mode: "share"
+    share:
+      name: "data"
+
+config:
+  server.directories.plugins: "/plugins"
+  # Licences
+  gds.enterprise.license_file: "/licenses/gds.license"
+  dbms.bloom.license_file: "/licenses/bloom.license"
+
+  # Procédures autorisées
+  dbms.security.procedures.unrestricted: "gds.*,apoc.*,bloom.*"
+  dbms.security.procedures.allowlist: "gds.*,bloom.*"
+
+  # Extensions non managées (Bloom server + RDF/neosemantics)
+  server.unmanaged_extension_classes: "com.neo4j.bloom.server=/bloom,semantics.extension=/rdf"
+
+  # Allowlist HTTP (browser + bloom)
+  dbms.security.http_auth_allowlist: "/,/browser.*,/bloom.*"
+
+podSpec:
+  podAntiAffinity: false

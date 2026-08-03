@@ -1,0 +1,146 @@
+neo4j:
+  name: standalone
+  edition: "enterprise"
+  acceptLicenseAgreement: "yes"
+  password: "password"
+  resources:
+    cpu: "1"
+    memory: "2Gi"
+
+volumes:
+  data:
+    mode: defaultStorageClass
+    defaultStorageClass:
+      requests:
+        storage: 5Gi
+  # Les logs restent aussi écrits dans des fichiers sur ce volume.
+  logs:
+    mode: defaultStorageClass
+    defaultStorageClass:
+      accessModes:
+        - ReadWriteOnce
+      requests:
+        storage: 5Gi
+
+podSpec:
+  podAntiAffinity: false
+
+# --- Logs : fichiers + stdout ---------------------------------------------
+# On repart du server-logs.xml standard (appenders RollingRandomAccessFile
+# vers /logs/*.log) et on AJOUTE un appender Console (SYSTEM_OUT) référencé
+# par tous les loggers -> chaque log part à la fois dans son fichier ET sur
+# la sortie standard du conteneur (visible via `kubectl logs`).
+logging:
+  serverLogsXml: |-
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="ERROR" monitorInterval="30" packages="org.neo4j.logging.log4j">
+        <Appenders>
+            <!-- Sortie standard : un appender par type de log, chacun ajoute
+                 un champ "log_source" dans le JSON pour identifier l'origine. -->
+            <Console name="ConsoleDebug" target="SYSTEM_OUT">
+                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json">
+                    <EventTemplateAdditionalField key="log_source" value="debug"/>
+                </JsonTemplateLayout>
+            </Console>
+            <Console name="ConsoleHttp" target="SYSTEM_OUT">
+                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json">
+                    <EventTemplateAdditionalField key="log_source" value="http"/>
+                </JsonTemplateLayout>
+            </Console>
+            <Console name="ConsoleQuery" target="SYSTEM_OUT">
+                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/QueryLogJsonLayout.json">
+                    <EventTemplateAdditionalField key="log_source" value="query"/>
+                </JsonTemplateLayout>
+            </Console>
+            <Console name="ConsoleSecurity" target="SYSTEM_OUT">
+                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json">
+                    <EventTemplateAdditionalField key="log_source" value="security"/>
+                </JsonTemplateLayout>
+            </Console>
+
+            <!-- Fichiers -->
+            <RollingRandomAccessFile name="DebugLog" fileName="${config:server.directories.logs}/debug.log"
+                                     filePattern="$${config:server.directories.logs}/debug.log.%02i">
+                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json"/>
+                <Policies>
+                    <SizeBasedTriggeringPolicy size="20 MB"/>
+                </Policies>
+                <DefaultRolloverStrategy fileIndex="min" max="7"/>
+            </RollingRandomAccessFile>
+
+            <RollingRandomAccessFile name="HttpLog" fileName="${config:server.directories.logs}/http.log"
+                                     filePattern="$${config:server.directories.logs}/http.log.%02i">
+                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json"/>
+                <Policies>
+                    <SizeBasedTriggeringPolicy size="20 MB"/>
+                </Policies>
+                <DefaultRolloverStrategy fileIndex="min" max="5"/>
+            </RollingRandomAccessFile>
+
+            <RollingRandomAccessFile name="QueryLog" fileName="${config:server.directories.logs}/query.log"
+                                     filePattern="$${config:server.directories.logs}/query.log.%02i">
+                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/QueryLogJsonLayout.json"/>
+                <Policies>
+                    <SizeBasedTriggeringPolicy size="20 MB"/>
+                </Policies>
+                <DefaultRolloverStrategy fileIndex="min" max="7"/>
+            </RollingRandomAccessFile>
+
+            <RollingRandomAccessFile name="SecurityLog" fileName="${config:server.directories.logs}/security.log"
+                                     filePattern="$${config:server.directories.logs}/security.log.%02i">
+                <JsonTemplateLayout eventTemplateUri="classpath:org/neo4j/logging/StructuredLayoutWithMessage.json"/>
+                <Policies>
+                    <SizeBasedTriggeringPolicy size="20 MB"/>
+                </Policies>
+                <DefaultRolloverStrategy fileIndex="min" max="7"/>
+            </RollingRandomAccessFile>
+        </Appenders>
+
+        <Loggers>
+            <!-- Debug/root : fichier + stdout (log_source=debug) -->
+            <Root level="INFO">
+                <AppenderRef ref="DebugLog"/>
+                <AppenderRef ref="ConsoleDebug"/>
+            </Root>
+            <!-- Query log : fichier + stdout (log_source=query) -->
+            <Logger name="QueryLogger" level="INFO" additivity="false">
+                <AppenderRef ref="QueryLog"/>
+                <AppenderRef ref="ConsoleQuery"/>
+            </Logger>
+            <!-- Http log : fichier + stdout (log_source=http) -->
+            <Logger name="HttpLogger" level="INFO" additivity="false">
+                <AppenderRef ref="HttpLog"/>
+                <AppenderRef ref="ConsoleHttp"/>
+            </Logger>
+            <!-- Security log : fichier + stdout (log_source=security) -->
+            <Logger name="SecurityLogger" level="INFO" additivity="false">
+                <AppenderRef ref="SecurityLog"/>
+                <AppenderRef ref="ConsoleSecurity"/>
+            </Logger>
+        </Loggers>
+    </Configuration>
+
+  # neo4j.log (user log) : fichier + stdout
+  userLogsXml: |-
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Configuration status="ERROR" packages="org.neo4j.logging.log4j">
+        <Appenders>
+            <Console name="ConsoleAppender" target="SYSTEM_OUT">
+                <PatternLayout pattern="[neo4j] %d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+            </Console>
+            <RollingRandomAccessFile name="Neo4jLog" fileName="${config:server.directories.logs}/neo4j.log"
+                                     filePattern="$${config:server.directories.logs}/neo4j.log.%02i">
+                <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss.SSSZ}{GMT+0} %-5p %m%n"/>
+                <Policies>
+                    <SizeBasedTriggeringPolicy size="20 MB"/>
+                </Policies>
+                <DefaultRolloverStrategy fileIndex="min" max="7"/>
+            </RollingRandomAccessFile>
+        </Appenders>
+        <Loggers>
+            <Root level="INFO">
+                <AppenderRef ref="Neo4jLog"/>
+                <AppenderRef ref="ConsoleAppender"/>
+            </Root>
+        </Loggers>
+    </Configuration>

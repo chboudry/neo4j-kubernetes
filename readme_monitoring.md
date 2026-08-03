@@ -27,6 +27,14 @@ For DaemonSets, collecting logs directly from `/logs` is more complex:
 the storage backend must allow simultaneous access from Neo4j and the log collector. In Kubernetes, this generally means using a PersistentVolume with the `ReadWriteMany` (`RWX`) access mode. This becomes more complex when multiple Neo4j pods are scheduled on the same node,
 as the collector must correctly map each log directory to the corresponding instance.
 
+One way to make DaemonSet collection straightforward is to also forward **all**
+Neo4j logs (`debug.log`, `query.log`, `http.log`, `security.log`, `neo4j.log`) to
+`stdout`, on top of the log files. A working example is provided in
+[`1_installation/local/4_standalone_logs_stdout`](1_installation/local/4_standalone_logs_stdout):
+it customizes `logging.serverLogsXml` / `logging.userLogsXml` to add a `Console`
+appender for each logger, with a `log_source` field in the JSON so each line can
+be traced back to its origin (debug/query/http/security).
+
 Solution will then depend on your need:
 
 | Strategy | Use when you need |
